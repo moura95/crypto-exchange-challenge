@@ -18,7 +18,7 @@ coverage.html
 .vscode/
 *.swp
 *.swo
-.claude
+.claudesync
 
 # OS
 .DS_Store
