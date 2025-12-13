@@ -81,84 +81,73 @@ func (e *Engine) getOrCreateOrderbook(pair Pair) *orderbook.Orderbook {
 // ORDER OPERATIONS
 // =============================================================================
 
-// PlaceOrder creates a new order, locks balance, and tries to match
 func (e *Engine) PlaceOrder(userID string, pair Pair, side orderbook.Side, price, amount float64) (*orderbook.Order, []orderbook.Match, error) {
+
+	// 1. Basic validation
 	if !pair.IsValid() {
 		return nil, nil, ErrInvalidPair
 	}
 
-	// 1. Normalize Price
+	// Normalize and validate price
 	price = utils.FloorToTick(price, PriceTick)
-
-	// 2. Validate
 	if !utils.IsValidTick(price, PriceTick) {
 		return nil, nil, ErrInvalidPriceTick
 	}
 
-	// 3. Normalize amount
+	// Normalize and validate amount
 	amount = utils.FloorToTick(amount, AmountTick)
-
-	// 4. Validate amount
 	if !utils.IsValidTick(amount, AmountTick) {
 		return nil, nil, ErrInvalidAmountTick
 	}
 
-	// 5. Create order
+	// 2. Create order
 	order, err := orderbook.NewOrder(userID, side, price, amount)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	// 3. Decide which asset and how much to lock
 	var lockAsset string
 	var lockAmount float64
 
 	if side == orderbook.Bid {
-		// Buy: lock quote asset (BRL)
+		// BUY: lock quote currency (BRL)
 		lockAsset = pair.Quote
-		lockAmount = price * amount
+		lockAmount = order.Price * order.Amount
 	} else {
-		// Sell: lock base asset (BTC)
+		// SELL: lock base currency (BTC)
 		lockAsset = pair.Base
-		lockAmount = amount
+		lockAmount = order.Amount
 	}
 
-	err = e.accounts.Lock(userID, lockAsset, lockAmount)
-	if err != nil {
+	// Lock funds
+	if err := e.accounts.Lock(userID, lockAsset, lockAmount); err != nil {
 		return nil, nil, err
 	}
 
 	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	ob := e.getOrCreateOrderbook(pair)
 
-	// Place order in orderbook
+	// Place order and try to match
 	matches := ob.PlaceLimitOrder(order)
 
-	// Execute transfers for each match
+	// 5. Execute balance transfers for each match
 	for _, match := range matches {
 		if err := e.executeTransfer(pair, match); err != nil {
-			e.mu.Unlock()
-			// Rollback
+			// Best-effort: unlock the initial lock so user won't get stuck
+			_ = e.accounts.Unlock(userID, lockAsset, lockAmount)
 			return nil, nil, fmt.Errorf("transfer failed: %w", err)
 		}
 	}
 
-	// If order was partially filled, unlock the unused portion (BUY)
-	if side == orderbook.Bid && len(matches) > 0 && !order.IsFilled() {
-		executedQuote := 0.0
-		for _, m := range matches {
-			executedQuote += m.SizeFilled * m.Price
-		}
-
-		initialLock := price * order.Amount
-		stillLocked := price * order.RemainingAmount()
-		refund := initialLock - executedQuote - stillLocked
-
-		if refund > 1e-9 {
-			_ = e.accounts.Unlock(userID, pair.Quote, refund)
-		}
+	// 6. Refund price improvement for BUY orders
+	if err := e.refundBidDifference(userID, pair, order, matches); err != nil {
+		// Best-effort: unlock the initial lock so user won't get stuck
+		_ = e.accounts.Unlock(userID, lockAsset, lockAmount)
+		return nil, nil, fmt.Errorf("refund failed: %w", err)
 	}
-
-	e.mu.Unlock()
 
 	return order, matches, nil
 }
@@ -169,10 +158,11 @@ func (e *Engine) CancelOrder(userID string, pair Pair, orderID int64) (*orderboo
 		return nil, ErrInvalidPair
 	}
 
-	e.mu.RLock()
-	ob, exists := e.orderbooks[pair.String()]
-	e.mu.RUnlock()
+	// Use a single critical section to avoid races with PlaceOrder/matching.
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
+	ob, exists := e.orderbooks[pair.String()]
 	if !exists {
 		return nil, ErrOrderNotFound
 	}
@@ -183,7 +173,7 @@ func (e *Engine) CancelOrder(userID string, pair Pair, orderID int64) (*orderboo
 		return nil, ErrOrderNotFound
 	}
 
-	// Check if user is owner the order
+	// Check if user owns the order
 	if order.UserID != userID {
 		return nil, ErrUnauthorized
 	}
@@ -207,7 +197,10 @@ func (e *Engine) CancelOrder(userID string, pair Pair, orderID int64) (*orderboo
 	}
 
 	if unlockAmount > 0 {
-		_ = e.accounts.Unlock(userID, unlockAsset, unlockAmount)
+		if err := e.accounts.Unlock(userID, unlockAsset, unlockAmount); err != nil {
+			// For the challenge: fail-fast so we don't hide inconsistencies
+			return nil, err
+		}
 	}
 
 	return cancelledOrder, nil
@@ -248,4 +241,39 @@ func (e *Engine) GetOrderbook(pair Pair) *orderbook.Orderbook {
 	defer e.mu.RUnlock()
 
 	return e.orderbooks[pair.String()]
+}
+
+func (e *Engine) refundBidDifference(userID string, pair Pair, order *orderbook.Order, matches []orderbook.Match) error {
+	// Refund applies only to BUY orders (BID)
+	// and only when at least one match happened
+	if order.Side != orderbook.Bid || len(matches) == 0 {
+		return nil
+	}
+
+	// 1. Calculate how much money was really spent
+	executedQuote := 0.0
+	for _, m := range matches {
+		executedQuote += m.SizeFilled * m.Price
+	}
+
+	// 2. Amount locked when the order was created
+	initialLock := order.Price * order.Amount
+
+	// 3. Amount that must stay locked for the remaining order
+	stillLocked := order.Price * order.RemainingAmount()
+
+	// 4. Money that must be returned to the user
+	refund := initialLock - executedQuote - stillLocked
+
+	// 5. Avoid unlocking very small values caused by float errors.
+
+	const minRefundBRL = 0.01
+
+	if refund >= minRefundBRL {
+		if err := e.accounts.Unlock(userID, pair.Quote, refund); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
