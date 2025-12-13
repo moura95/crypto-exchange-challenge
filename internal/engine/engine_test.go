@@ -456,3 +456,43 @@ func TestEngine_PlaceOrder_BuyPartialFill_WithPriceImprovement_ShouldRefundAndKe
 	sellerBTC := e.accounts.GetBalance("2", "BTC")
 	assertFloat(t, 9.5, sellerBTC.Available, "Seller BTC after trade")
 }
+
+func TestEngine_CancelOrder_AfterBuyPartialFill_SamePrice_ShouldUnlockRemaining(t *testing.T) {
+	e := setupEngine()
+
+	// User 2 places ASK: 0.5 BTC @ 50,000
+	_, _, err := e.PlaceOrder("2", btcBrl(), orderbook.Ask, 50_000, 0.5)
+	assertNoError(t, err)
+
+	// User 1 places BID: 1 BTC @ 50,000 (will partially fill)
+	order, matches, err := e.PlaceOrder("1", btcBrl(), orderbook.Bid, 50_000, 1.0)
+	assertNoError(t, err)
+
+	// One partial match
+	assertEqual(t, 1, len(matches), "Should have 1 match")
+	assertEqual(t, orderbook.OrderPartiallyFilled, order.State, "Order should be partially filled")
+	assertFloat(t, 0.5, order.RemainingAmount(), "Remaining amount should be 0.5")
+
+	// Locked before cancel should be exactly for remaining amount
+	buyerBRLBeforeCancel := e.accounts.GetBalance("1", "BRL")
+	assertFloat(t, 25_000, buyerBRLBeforeCancel.Locked, "Buyer BRL locked before cancel")
+
+	// Cancel remaining order
+	cancelled, err := e.CancelOrder("1", btcBrl(), order.ID)
+	assertNoError(t, err)
+
+	assertEqual(t, orderbook.OrderCancelled, cancelled.State, "Order should be cancelled")
+	assertFloat(t, 0.5, cancelled.FilledAmount, "Filled amount should be preserved")
+
+	// After cancel:
+	// Initial BRL: 100,000
+	// Spent: 25,000
+	// Remaining 25,000 must be unlocked
+	buyerBRLAfterCancel := e.accounts.GetBalance("1", "BRL")
+	assertFloat(t, 75_000, buyerBRLAfterCancel.Available, "Buyer BRL available after cancel")
+	assertFloat(t, 0, buyerBRLAfterCancel.Locked, "Buyer BRL locked should be 0")
+
+	// Buyer BTC should have +0.5 from the trade
+	buyerBTC := e.accounts.GetBalance("1", "BTC")
+	assertFloat(t, 10.5, buyerBTC.Available, "Buyer BTC after partial fill and cancel")
+}
