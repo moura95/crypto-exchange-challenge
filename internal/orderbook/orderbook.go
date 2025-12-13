@@ -44,6 +44,13 @@ const (
 	OrderCancelled       OrderState = "cancelled"
 )
 
+type OrderType string
+
+const (
+	OrderTypeLimit  OrderType = "limit"
+	OrderTypeMarket OrderType = "market"
+)
+
 // =============================================================================
 // ID GENERATOR
 // =============================================================================
@@ -62,6 +69,7 @@ type Order struct {
 	ID           int64
 	UserID       string
 	Side         Side
+	Type         OrderType
 	Price        float64
 	Amount       float64
 	FilledAmount float64
@@ -88,7 +96,32 @@ func NewOrder(userID string, side Side, price, amount float64) (*Order, error) {
 		ID:           nextOrderID(),
 		UserID:       userID,
 		Side:         side,
+		Type:         OrderTypeLimit,
 		Price:        price,
+		Amount:       amount,
+		FilledAmount: 0,
+		State:        OrderOpen,
+		Timestamp:    time.Now(),
+	}, nil
+}
+
+func NewMarketOrder(userID string, side Side, amount float64) (*Order, error) {
+	if userID == "" {
+		return nil, errors.New("userID cannot be empty")
+	}
+	if side != Bid && side != Ask {
+		return nil, ErrInvalidSide
+	}
+	if amount <= 0 {
+		return nil, ErrInvalidAmount
+	}
+
+	return &Order{
+		ID:           nextOrderID(),
+		UserID:       userID,
+		Side:         side,
+		Type:         OrderTypeMarket,
+		Price:        0,
 		Amount:       amount,
 		FilledAmount: 0,
 		State:        OrderOpen,
@@ -101,7 +134,12 @@ func (o *Order) IsFilled() bool { return o.FilledAmount >= o.Amount }
 func (o *Order) RemainingAmount() float64 { return o.Amount - o.FilledAmount }
 
 func (o *Order) String() string {
-	return fmt.Sprintf("[ID:%d User:%s %s %.8f@%.2f filled:%.8f state:%s]",
+	if o.Type == OrderTypeMarket {
+		return fmt.Sprintf("[ID:%d User:%s %s MARKET %.8f filled:%.8f state:%s]",
+			o.ID, o.UserID, o.Side, o.Amount, o.FilledAmount, o.State)
+	}
+
+	return fmt.Sprintf("[ID:%d User:%s %s LIMIT %.8f@%.2f filled:%.8f state:%s]",
 		o.ID, o.UserID, o.Side, o.Amount, o.Price, o.FilledAmount, o.State)
 }
 
@@ -167,7 +205,7 @@ func (l *Limit) Fill(incomingOrder *Order, priceTick float64) []Match {
 	var matches []Match
 	var ordersToDelete []*Order
 
-	levelPrice := utils.TicksToPrice(l.PriceTicks, priceTick) //
+	levelPrice := utils.TicksToPrice(l.PriceTicks, priceTick)
 
 	for _, existingOrder := range l.Orders {
 		if incomingOrder.IsFilled() {
@@ -299,6 +337,56 @@ func (ob *Orderbook) PlaceLimitOrder(order *Order) []Match {
 
 	if !order.IsFilled() {
 		ob.addOrderToBook(order, orderPriceTicks)
+	}
+
+	return matches
+}
+
+// PlaceMarketOrder executes immediately against the top of book.
+func (ob *Orderbook) PlaceMarketOrder(order *Order) []Match {
+	ob.mu.Lock()
+	defer ob.mu.Unlock()
+
+	var matches []Match
+
+	if order.Side == Bid {
+		// BUY market: consume asks from best price (lowest)
+		for _, askLimit := range ob.asks {
+			if order.IsFilled() {
+				break
+			}
+
+			limitMatches := askLimit.Fill(order, ob.priceTick)
+			matches = append(matches, limitMatches...)
+
+			if len(askLimit.Orders) == 0 {
+				ob.clearLimit(false, askLimit)
+			}
+		}
+	} else {
+		// SELL market: consume bids from best price (highest)
+		for _, bidLimit := range ob.bids {
+			if order.IsFilled() {
+				break
+			}
+
+			limitMatches := bidLimit.Fill(order, ob.priceTick)
+			matches = append(matches, limitMatches...)
+
+			if len(bidLimit.Orders) == 0 {
+				ob.clearLimit(true, bidLimit)
+			}
+		}
+	}
+
+	// Market order never goes to the book
+	if order.IsFilled() {
+		order.State = OrderFilled
+	} else if order.FilledAmount > 0 {
+		order.State = OrderPartiallyFilled
+	} else {
+		// IOC behavior: executed 0 and finishes here
+		order.State = OrderOpen
 	}
 
 	return matches
