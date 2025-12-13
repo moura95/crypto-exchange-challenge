@@ -33,9 +33,7 @@ const (
 	Ask Side = "ask" // Sell
 )
 
-func (s Side) String() string {
-	return string(s)
-}
+func (s Side) String() string { return string(s) }
 
 type OrderState string
 
@@ -98,16 +96,12 @@ func NewOrder(userID string, side Side, price, amount float64) (*Order, error) {
 	}, nil
 }
 
-func (o *Order) IsFilled() bool {
-	return o.FilledAmount >= o.Amount
-}
+func (o *Order) IsFilled() bool { return o.FilledAmount >= o.Amount }
 
-func (o *Order) RemainingAmount() float64 {
-	return o.Amount - o.FilledAmount
-}
+func (o *Order) RemainingAmount() float64 { return o.Amount - o.FilledAmount }
 
 func (o *Order) String() string {
-	return fmt.Sprintf("[ID:%d User:%s %s %.4f@%.2f filled:%.4f state:%s]",
+	return fmt.Sprintf("[ID:%d User:%s %s %.8f@%.2f filled:%.8f state:%s]",
 		o.ID, o.UserID, o.Side, o.Amount, o.Price, o.FilledAmount, o.State)
 }
 
@@ -124,7 +118,7 @@ type Match struct {
 }
 
 func (m Match) String() string {
-	return fmt.Sprintf("[Match: %.4f @ %.2f | Buyer:%s Seller:%s]",
+	return fmt.Sprintf("[Match: %.8f @ %.2f | Buyer:%s Seller:%s]",
 		m.SizeFilled, m.Price, m.Bid.UserID, m.Ask.UserID)
 }
 
@@ -145,8 +139,8 @@ func NewLimit(priceTicks int64) *Limit {
 	}
 }
 
-func (l *Limit) Price() float64 {
-	const priceTick = 0.01
+// Price returns the float price for display/DTO. Source of truth is PriceTicks.
+func (l *Limit) Price(priceTick float64) float64 {
 	return utils.TicksToPrice(l.PriceTicks, priceTick)
 }
 
@@ -167,19 +161,18 @@ func (l *Limit) DeleteOrder(o *Order) {
 	}
 }
 
-// Fill fill incoming order with orders from this price level
-// Implement Self-Trade Prevention: skip orders from same user
-// Return list of matches executed
-func (l *Limit) Fill(incomingOrder *Order) []Match {
+// Fill fills incomingOrder against this price level.
+// Self-trade prevention: skip resting orders from same user.
+func (l *Limit) Fill(incomingOrder *Order, priceTick float64) []Match {
 	var matches []Match
 	var ordersToDelete []*Order
+
+	levelPrice := utils.TicksToPrice(l.PriceTicks, priceTick) //
 
 	for _, existingOrder := range l.Orders {
 		if incomingOrder.IsFilled() {
 			break
 		}
-
-		// Self-Trade Prevention: skip orders from same user
 		if existingOrder.UserID == incomingOrder.UserID {
 			continue
 		}
@@ -189,16 +182,18 @@ func (l *Limit) Fill(incomingOrder *Order) []Match {
 		incomingOrder.FilledAmount += fillSize
 		existingOrder.FilledAmount += fillSize
 
-		if incomingOrder.IsFilled() {
+		switch {
+		case incomingOrder.IsFilled():
 			incomingOrder.State = OrderFilled
-		} else if incomingOrder.FilledAmount > 0 {
+		case incomingOrder.FilledAmount > 0:
 			incomingOrder.State = OrderPartiallyFilled
 		}
 
-		if existingOrder.IsFilled() {
+		switch {
+		case existingOrder.IsFilled():
 			existingOrder.State = OrderFilled
 			ordersToDelete = append(ordersToDelete, existingOrder)
-		} else if existingOrder.FilledAmount > 0 {
+		case existingOrder.FilledAmount > 0:
 			existingOrder.State = OrderPartiallyFilled
 		}
 
@@ -216,7 +211,7 @@ func (l *Limit) Fill(incomingOrder *Order) []Match {
 		match := Match{
 			Bid:        bid,
 			Ask:        ask,
-			Price:      existingOrder.Price,
+			Price:      levelPrice,
 			SizeFilled: fillSize,
 			Timestamp:  time.Now(),
 		}
@@ -244,6 +239,8 @@ type Orderbook struct {
 	Orders    map[int64]*Order
 
 	mu sync.RWMutex
+
+	priceTick float64
 }
 
 func NewOrderbook() *Orderbook {
@@ -253,27 +250,29 @@ func NewOrderbook() *Orderbook {
 		BidLimits: make(map[int64]*Limit),
 		AskLimits: make(map[int64]*Limit),
 		Orders:    make(map[int64]*Order),
+		priceTick: 0.01,
 	}
 }
 
 // PlaceLimitOrder places order in orderbook and tries to match
-func (ob *Orderbook) PlaceLimitOrder(order *Order, priceTicks int64) []Match {
+func (ob *Orderbook) PlaceLimitOrder(order *Order) []Match {
 	ob.mu.Lock()
 	defer ob.mu.Unlock()
+
+	orderPriceTicks := utils.PriceToTicks(order.Price, ob.priceTick)
 
 	var matches []Match
 
 	if order.Side == Bid {
 		for _, askLimit := range ob.asks {
-			if askLimit.PriceTicks > priceTicks {
+			if askLimit.PriceTicks > orderPriceTicks {
 				break
 			}
-
 			if order.IsFilled() {
 				break
 			}
 
-			limitMatches := askLimit.Fill(order)
+			limitMatches := askLimit.Fill(order, ob.priceTick)
 			matches = append(matches, limitMatches...)
 
 			if len(askLimit.Orders) == 0 {
@@ -282,15 +281,14 @@ func (ob *Orderbook) PlaceLimitOrder(order *Order, priceTicks int64) []Match {
 		}
 	} else {
 		for _, bidLimit := range ob.bids {
-			if bidLimit.PriceTicks < priceTicks {
+			if bidLimit.PriceTicks < orderPriceTicks {
 				break
 			}
-
 			if order.IsFilled() {
 				break
 			}
 
-			limitMatches := bidLimit.Fill(order)
+			limitMatches := bidLimit.Fill(order, ob.priceTick)
 			matches = append(matches, limitMatches...)
 
 			if len(bidLimit.Orders) == 0 {
@@ -300,7 +298,7 @@ func (ob *Orderbook) PlaceLimitOrder(order *Order, priceTicks int64) []Match {
 	}
 
 	if !order.IsFilled() {
-		ob.addOrderToBook(order, priceTicks)
+		ob.addOrderToBook(order, orderPriceTicks)
 	}
 
 	return matches
@@ -308,7 +306,6 @@ func (ob *Orderbook) PlaceLimitOrder(order *Order, priceTicks int64) []Match {
 
 func (ob *Orderbook) addOrderToBook(order *Order, priceTicks int64) {
 	var limit *Limit
-
 	if order.Side == Bid {
 		limit = ob.BidLimits[priceTicks]
 	} else {
@@ -347,10 +344,8 @@ func (ob *Orderbook) CancelOrder(orderID int64) (*Order, error) {
 	}
 
 	limit := order.Limit
-
 	if limit != nil {
 		limit.DeleteOrder(order)
-
 		if len(limit.Orders) == 0 {
 			ob.clearLimit(order.Side == Bid, limit)
 		}
@@ -358,13 +353,12 @@ func (ob *Orderbook) CancelOrder(orderID int64) (*Order, error) {
 
 	delete(ob.Orders, orderID)
 	order.State = OrderCancelled
-
 	return order, nil
 }
 
 func (ob *Orderbook) clearLimit(isBid bool, limit *Limit) {
 	if isBid {
-		delete(ob.BidLimits, limit.PriceTicks) // ← use PriceTicks
+		delete(ob.BidLimits, limit.PriceTicks)
 		for i := 0; i < len(ob.bids); i++ {
 			if ob.bids[i].PriceTicks == limit.PriceTicks {
 				ob.bids = append(ob.bids[:i], ob.bids[i+1:]...)
@@ -372,7 +366,7 @@ func (ob *Orderbook) clearLimit(isBid bool, limit *Limit) {
 			}
 		}
 	} else {
-		delete(ob.AskLimits, limit.PriceTicks) // ← use PriceTicks
+		delete(ob.AskLimits, limit.PriceTicks)
 		for i := 0; i < len(ob.asks); i++ {
 			if ob.asks[i].PriceTicks == limit.PriceTicks {
 				ob.asks = append(ob.asks[:i], ob.asks[i+1:]...)
@@ -385,36 +379,30 @@ func (ob *Orderbook) clearLimit(isBid bool, limit *Limit) {
 func (ob *Orderbook) Bids() []*Limit {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-
 	return ob.bids
 }
 
 func (ob *Orderbook) Asks() []*Limit {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-
 	return ob.asks
 }
 
 func (ob *Orderbook) BestBid() (*Limit, bool) {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-
 	if len(ob.bids) == 0 {
 		return nil, false
 	}
-
 	return ob.bids[0], true
 }
 
 func (ob *Orderbook) BestAsk() (*Limit, bool) {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-
 	if len(ob.asks) == 0 {
 		return nil, false
 	}
-
 	return ob.asks[0], true
 }
 
@@ -426,12 +414,8 @@ func (ob *Orderbook) Spread() float64 {
 		return 0
 	}
 
-	// Calculate spread in ticks
 	spreadTicks := ob.asks[0].PriceTicks - ob.bids[0].PriceTicks
-
-	// Convert back to price using utility function
-	const priceTick = 0.01
-	return utils.TicksToPrice(spreadTicks, priceTick)
+	return utils.TicksToPrice(spreadTicks, ob.priceTick)
 }
 
 func (ob *Orderbook) BidTotalVolume() float64 {
@@ -439,8 +423,8 @@ func (ob *Orderbook) BidTotalVolume() float64 {
 	defer ob.mu.RUnlock()
 
 	total := 0.0
-	for _, limit := range ob.bids {
-		total += limit.TotalVolume
+	for _, l := range ob.bids {
+		total += l.TotalVolume
 	}
 	return total
 }
@@ -450,8 +434,8 @@ func (ob *Orderbook) AskTotalVolume() float64 {
 	defer ob.mu.RUnlock()
 
 	total := 0.0
-	for _, limit := range ob.asks {
-		total += limit.TotalVolume
+	for _, l := range ob.asks {
+		total += l.TotalVolume
 	}
 	return total
 }
@@ -459,9 +443,8 @@ func (ob *Orderbook) AskTotalVolume() float64 {
 func (ob *Orderbook) GetOrder(orderID int64) (*Order, bool) {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()
-
-	order, exists := ob.Orders[orderID]
-	return order, exists
+	o, ok := ob.Orders[orderID]
+	return o, ok
 }
 
 func min(a, b float64) float64 {
