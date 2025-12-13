@@ -33,6 +33,7 @@ func assertEqual(t *testing.T, expected, actual interface{}, msg string) {
 
 func assertFloat(t *testing.T, expected, actual float64, msg string) {
 	t.Helper()
+	// comparação direta funciona aqui porque você usa ticks fixos (0.01 / 1e-8) e valores “redondos”
 	if expected != actual {
 		t.Errorf("%s: expected %.4f, got %.4f", msg, expected, actual)
 	}
@@ -45,10 +46,10 @@ func assertTrue(t *testing.T, condition bool, msg string) {
 	}
 }
 
-func assertNil(t *testing.T, actual interface{}, msg string) {
+func assertFalse(t *testing.T, condition bool, msg string) {
 	t.Helper()
-	if actual != nil {
-		t.Errorf("%s: expected nil, got %v", msg, actual)
+	if condition {
+		t.Errorf("%s: expected false", msg)
 	}
 }
 
@@ -59,10 +60,10 @@ func btcBrl() Pair {
 func setupEngine() *Engine {
 	e := NewEngine()
 	// Give users some balance
-	e.accounts.Credit("1", "BRL", 100_000)
-	e.accounts.Credit("1", "BTC", 10)
-	e.accounts.Credit("2", "BRL", 100_000)
-	e.accounts.Credit("2", "BTC", 10)
+	_ = e.accounts.Credit("1", "BRL", 100_000)
+	_ = e.accounts.Credit("1", "BTC", 10)
+	_ = e.accounts.Credit("2", "BRL", 100_000)
+	_ = e.accounts.Credit("2", "BTC", 10)
 	return e
 }
 
@@ -80,14 +81,17 @@ func TestPair_IsValid(t *testing.T) {
 	assertTrue(t, valid.IsValid(), "Valid pair")
 
 	invalid1 := Pair{Base: "", Quote: "BRL"}
-	assertTrue(t, !invalid1.IsValid(), "Invalid pair (empty base)")
+	assertFalse(t, invalid1.IsValid(), "Invalid pair (empty base)")
 
 	invalid2 := Pair{Base: "BTC", Quote: ""}
-	assertTrue(t, !invalid2.IsValid(), "Invalid pair (empty quote)")
+	assertFalse(t, invalid2.IsValid(), "Invalid pair (empty quote)")
+
+	invalid3 := Pair{Base: "BTC", Quote: "USD"}
+	assertFalse(t, invalid3.IsValid(), "Invalid pair (quote must be BRL)")
 }
 
 // =============================================================================
-// ENGINE TESTS
+// ENGINE BASIC TESTS
 // =============================================================================
 
 func TestNewEngine(t *testing.T) {
@@ -116,7 +120,7 @@ func TestEngine_Credit(t *testing.T) {
 func TestEngine_Debit(t *testing.T) {
 	e := NewEngine()
 
-	e.accounts.Credit("1", "BTC", 10)
+	_ = e.accounts.Credit("1", "BTC", 10)
 	err := e.accounts.Debit("1", "BTC", 3)
 	assertNoError(t, err)
 
@@ -127,8 +131,8 @@ func TestEngine_Debit(t *testing.T) {
 func TestEngine_GetAllBalances(t *testing.T) {
 	e := NewEngine()
 
-	e.accounts.Credit("1", "BTC", 10)
-	e.accounts.Credit("1", "BRL", 50_000)
+	_ = e.accounts.Credit("1", "BTC", 10)
+	_ = e.accounts.Credit("1", "BRL", 50_000)
 
 	balances := e.accounts.GetAllBalances("1")
 	assertEqual(t, 2, len(balances), "Number of balances")
@@ -172,17 +176,21 @@ func TestEngine_PlaceOrder_FullMatch(t *testing.T) {
 	assertEqual(t, orderbook.OrderFilled, order.State, "Order should be filled")
 
 	// Check balances after match
-	// Alice: paid 50000 BRL, received 1 BTC
+	// Buyer: paid 50000 BRL, received 1 BTC
 	userId1BRL := e.accounts.GetBalance("1", "BRL")
 	userID1BTC := e.accounts.GetBalance("1", "BTC")
 	assertFloat(t, 50_000, userId1BRL.Available, "UserId:1 BRL after match")
 	assertFloat(t, 11, userID1BTC.Available, "UserId:1 BTC after match")
 
-	// Bob: received 50000 BRL, sold 1 BTC
+	// Seller: received 50000 BRL, sold 1 BTC
 	userID2BRL := e.accounts.GetBalance("2", "BRL")
 	userID2BTC := e.accounts.GetBalance("2", "BTC")
 	assertFloat(t, 150_000, userID2BRL.Available, "UserId:2 BRL after match")
 	assertFloat(t, 9, userID2BTC.Available, "UserId:2 BTC after match")
+
+	// locked deve estar limpo para ambos nesse cenário
+	assertFloat(t, 0, userId1BRL.Locked, "Buyer BRL locked should be 0 after full fill")
+	assertFloat(t, 0, userID2BTC.Locked, "Seller BTC locked should be 0 after full fill")
 }
 
 func TestEngine_PlaceOrder_PartialMatch(t *testing.T) {
@@ -201,15 +209,15 @@ func TestEngine_PlaceOrder_PartialMatch(t *testing.T) {
 	assertEqual(t, orderbook.OrderPartiallyFilled, order.State, "Order should be partially filled")
 	assertFloat(t, 1, order.RemainingAmount(), "Remaining amount")
 
-	// UserId:1 BRL: started 100000, locked 100000 for 2 BTC, got back 50000 from selling 1 BTC
+	// UserId:1 BRL: locked 100000 initially; spent 50000; should remain 50000 locked for remaining 1 BTC @ 50000
 	userID1BRL := e.accounts.GetBalance("1", "BRL")
 	assertFloat(t, 0, userID1BRL.Available, "UserId:1 BRL available")
-	assertFloat(t, 50000, userID1BRL.Locked, "UserId:1 BRL locked for remaining order")
+	assertFloat(t, 50_000, userID1BRL.Locked, "UserId:1 BRL locked for remaining order")
 }
 
 func TestEngine_PlaceOrder_InsufficientBalance(t *testing.T) {
 	e := NewEngine()
-	e.accounts.Credit("1", "BRL", 1_000)
+	_ = e.accounts.Credit("1", "BRL", 1_000)
 
 	// Try to buy 1 BTC @ 50000 (needs 50_000 BRL)
 	_, _, err := e.PlaceOrder("1", btcBrl(), orderbook.Bid, 50_000, 1)
@@ -309,13 +317,17 @@ func TestEngine_CancelOrder_PartiallyFilled(t *testing.T) {
 
 	// Only the remaining locked amount should be unlocked
 	balance := e.accounts.GetBalance("2", "BRL")
-	assertFloat(t, 50000, balance.Available, "Available after cancel")
+	assertFloat(t, 50_000, balance.Available, "Available after cancel")
 	assertFloat(t, 0, balance.Locked, "Locked after cancel")
 }
 
+// =============================================================================
+// PRICE/TIME PRIORITY (FIFO)
+// =============================================================================
+
 func TestEngine_PriceTimePriority(t *testing.T) {
 	e := setupEngine()
-	e.accounts.Credit("3", "BTC", 10)
+	_ = e.accounts.Credit("3", "BTC", 10)
 
 	// UserID:1 sells 1 BTC @ 50000 (first)
 	_, _, err := e.PlaceOrder("1", btcBrl(), orderbook.Ask, 50_000, 1)
@@ -331,4 +343,36 @@ func TestEngine_PriceTimePriority(t *testing.T) {
 
 	assertEqual(t, 1, len(matches), "Should have 1 match")
 	assertEqual(t, "1", matches[0].Ask.UserID, "Should match with UserID:1 (FIFO)")
+}
+
+func TestEngine_PlaceOrder_BuyPriceImprovement_ShouldRefundDifference(t *testing.T) {
+	e := setupEngine()
+
+	// Seller places ask @ 49k
+	_, _, err := e.PlaceOrder("2", btcBrl(), orderbook.Ask, 49_000, 1)
+	assertNoError(t, err)
+
+	// Buyer places bid @ 50k (should execute at 49k and refund 1k)
+	order, matches, err := e.PlaceOrder("1", btcBrl(), orderbook.Bid, 50_000, 1)
+	assertNoError(t, err)
+
+	assertEqual(t, 1, len(matches), "Should have 1 match")
+	assertEqual(t, orderbook.OrderFilled, order.State, "Order should be filled")
+	assertFloat(t, 49_000, matches[0].Price, "Execution price should be best ask (price improvement)")
+
+	// Buyer started with 100k BRL.
+	// If executed at 49k: Available should be 51k, Locked should be 0.
+	buyerBRL := e.accounts.GetBalance("1", "BRL")
+	assertFloat(t, 51_000, buyerBRL.Available, "Buyer BRL available after price improvement trade")
+	assertFloat(t, 0, buyerBRL.Locked, "Buyer BRL locked should be 0 after fully filled")
+
+	// Buyer BTC should increase by 1 (started with 10)
+	buyerBTC := e.accounts.GetBalance("1", "BTC")
+	assertFloat(t, 11, buyerBTC.Available, "Buyer BTC after trade")
+
+	// Seller receives 49k BRL, and loses 1 BTC
+	sellerBRL := e.accounts.GetBalance("2", "BRL")
+	sellerBTC := e.accounts.GetBalance("2", "BTC")
+	assertFloat(t, 149_000, sellerBRL.Available, "Seller BRL after trade")
+	assertFloat(t, 9, sellerBTC.Available, "Seller BTC after trade")
 }
