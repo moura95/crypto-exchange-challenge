@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/moura95/crypto-exchange-challenge/internal/orderbook"
@@ -375,4 +376,83 @@ func TestEngine_PlaceOrder_BuyPriceImprovement_ShouldRefundDifference(t *testing
 	sellerBTC := e.accounts.GetBalance("2", "BTC")
 	assertFloat(t, 149_000, sellerBRL.Available, "Seller BRL after trade")
 	assertFloat(t, 9, sellerBTC.Available, "Seller BTC after trade")
+}
+
+func TestEngine_CancelOrder_Twice_ShouldReturnNotFound(t *testing.T) {
+	e := setupEngine()
+
+	// Place an order that stays open
+	order, _, err := e.PlaceOrder("1", btcBrl(), orderbook.Bid, 50_000, 1)
+	assertNoError(t, err)
+
+	// First cancel -> ok
+	_, err = e.CancelOrder("1", btcBrl(), order.ID)
+	assertNoError(t, err)
+
+	// Second cancel -> must be not found
+	_, err = e.CancelOrder("1", btcBrl(), order.ID)
+	assertEqual(t, ErrOrderNotFound, err, "Second cancel should return not found")
+}
+
+func TestEngine_ConcurrentPlaceOrders(t *testing.T) {
+	e := setupEngine()
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			user := "1"
+			if id%2 == 0 {
+				user = "2"
+			}
+			_, _, _ = e.PlaceOrder(user, btcBrl(), orderbook.Bid, 50_000, 0.01)
+		}(i)
+	}
+
+	wg.Wait()
+}
+
+func TestEngine_PlaceOrder_BuyPartialFill_WithPriceImprovement_ShouldRefundAndKeepCorrectLocked(t *testing.T) {
+	e := setupEngine()
+
+	// User 2 places ASK: 0.5 BTC @ 49,000
+	_, _, err := e.PlaceOrder("2", btcBrl(), orderbook.Ask, 49_000, 0.5)
+	assertNoError(t, err)
+
+	// User 1 places BID limit: 1 BTC @ 50,000
+	order, matches, err := e.PlaceOrder("1", btcBrl(), orderbook.Bid, 50_000, 1.0)
+	assertNoError(t, err)
+
+	// Should match only 0.5 BTC (because only 0.5 is available)
+	assertEqual(t, 1, len(matches), "Should have 1 match")
+	assertFloat(t, 0.5, matches[0].SizeFilled, "Filled size")
+	assertFloat(t, 49_000, matches[0].Price, "Executed price (price improvement)")
+
+	// Order should be partially filled
+	assertEqual(t, orderbook.OrderPartiallyFilled, order.State, "Order state")
+	assertFloat(t, 0.5, order.RemainingAmount(), "Remaining amount")
+
+	// Buyer balances:
+	// Initial BRL: 100,000
+	// Lock at start: 50,000 => Available 50,000 / Locked 50,000
+	// Executed quote: 0.5 * 49,000 = 24,500 (debited from locked)
+	// Still locked needed: 0.5 * 50,000 = 25,000
+	// Refund: 50,000 - 24,500 - 25,000 = 500
+	// Final: Available 50,500 / Locked 25,000
+	buyerBRL := e.accounts.GetBalance("1", "BRL")
+	assertFloat(t, 50_500, buyerBRL.Available, "Buyer BRL available after refund")
+	assertFloat(t, 25_000, buyerBRL.Locked, "Buyer BRL locked for remaining order")
+
+	buyerBTC := e.accounts.GetBalance("1", "BTC")
+	assertFloat(t, 10.5, buyerBTC.Available, "Buyer BTC after partial fill")
+
+	// Seller balances:
+	// Seller sold 0.5 BTC and received 24,500 BRL
+	sellerBRL := e.accounts.GetBalance("2", "BRL")
+	assertFloat(t, 124_500, sellerBRL.Available, "Seller BRL after trade")
+
+	sellerBTC := e.accounts.GetBalance("2", "BTC")
+	assertFloat(t, 9.5, sellerBTC.Available, "Seller BTC after trade")
 }
