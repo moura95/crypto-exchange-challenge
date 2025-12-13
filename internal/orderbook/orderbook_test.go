@@ -41,12 +41,12 @@ func assertFalse(t *testing.T, condition bool, msg string) {
 }
 
 func TestNewOrder_Valid(t *testing.T) {
-	order, err := NewOrder("1", Bid, 50000, 1.0)
+	order, err := NewOrder("1", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 
 	assertEqual(t, "1", order.UserID, "UserID")
 	assertEqual(t, Bid, order.Side, "Side")
-	assertFloat(t, 50000.0, order.Price, "Price")
+	assertFloat(t, 50_000, order.Price, "Price")
 	assertFloat(t, 1.0, order.Amount, "Amount")
 	assertFloat(t, 0.0, order.FilledAmount, "FilledAmount")
 	assertEqual(t, OrderOpen, order.State, "State")
@@ -66,33 +66,33 @@ func TestNewOrder_InvalidPrice(t *testing.T) {
 }
 
 func TestNewOrder_InvalidAmount(t *testing.T) {
-	_, err := NewOrder("1", Bid, 50000, 0)
+	_, err := NewOrder("1", Bid, 50_000, 0)
 	if err != ErrInvalidAmount {
 		t.Errorf("expected ErrInvalidAmount, got %v", err)
 	}
 
-	_, err = NewOrder("1", Bid, 50000, -1.0)
+	_, err = NewOrder("1", Bid, 50_000, -1.0)
 	if err != ErrInvalidAmount {
 		t.Errorf("expected ErrInvalidAmount, got %v", err)
 	}
 }
 
 func TestNewOrder_InvalidUserID(t *testing.T) {
-	_, err := NewOrder("", Bid, 50000, 1.0)
+	_, err := NewOrder("", Bid, 50_000, 1.0)
 	if err == nil {
 		t.Error("expected error for empty userID")
 	}
 }
 
 func TestNewOrder_InvalidSide(t *testing.T) {
-	_, err := NewOrder("1", Side("invalid"), 50000, 1.0)
+	_, err := NewOrder("1", Side("invalid"), 50_000, 1.0)
 	if err != ErrInvalidSide {
 		t.Errorf("expected ErrInvalidSide, got %v", err)
 	}
 }
 
 func TestOrder_IsFilled(t *testing.T) {
-	order, err := NewOrder("1", Bid, 50000, 1.0)
+	order, err := NewOrder("1", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 
 	assertFalse(t, order.IsFilled(), "New order should not be filled")
@@ -110,7 +110,7 @@ func TestOrder_IsFilled(t *testing.T) {
 }
 
 func TestOrder_RemainingAmount(t *testing.T) {
-	order, err := NewOrder("1", Bid, 50000, 2.0)
+	order, err := NewOrder("1", Bid, 50_000, 2.0)
 	assertNoError(t, err)
 
 	assertFloat(t, 2.0, order.RemainingAmount(), "Initial remaining")
@@ -123,12 +123,12 @@ func TestOrder_RemainingAmount(t *testing.T) {
 }
 
 func TestLimit_AddOrder(t *testing.T) {
-	limit := NewLimit(50000)
+	limit := NewLimit(50_000)
 
-	order1, err := NewOrder("1", Bid, 50000, 1.0)
+	order1, err := NewOrder("1", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 
-	order2, err := NewOrder("2", Bid, 50000, 2.0)
+	order2, err := NewOrder("2", Bid, 50_000, 2.0)
 	assertNoError(t, err)
 
 	limit.AddOrder(order1)
@@ -142,12 +142,12 @@ func TestLimit_AddOrder(t *testing.T) {
 }
 
 func TestLimit_DeleteOrder(t *testing.T) {
-	limit := NewLimit(50000)
+	limit := NewLimit(50_000)
 
-	order1, err := NewOrder("1", Bid, 50000, 1.0)
+	order1, err := NewOrder("1", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 
-	order2, err := NewOrder("2", Bid, 50000, 2.0)
+	order2, err := NewOrder("2", Bid, 50_000, 2.0)
 	assertNoError(t, err)
 
 	limit.AddOrder(order1)
@@ -160,20 +160,20 @@ func TestLimit_DeleteOrder(t *testing.T) {
 }
 
 func TestLimit_Fill_FullMatch(t *testing.T) {
-	limit := NewLimit(50000)
+	limit := NewLimit(50_000)
 
-	askOrder, err := NewOrder("1", Ask, 50000, 1.0)
+	askOrder, err := NewOrder("1", Ask, 50_000, 1.0)
 	assertNoError(t, err)
 	limit.AddOrder(askOrder)
 
-	bidOrder, err := NewOrder("2", Bid, 50000, 1.0)
+	bidOrder, err := NewOrder("2", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 
 	matches := limit.Fill(bidOrder)
 
 	assertEqual(t, 1, len(matches), "Should have 1 match")
 	assertFloat(t, 1.0, matches[0].SizeFilled, "Match size")
-	assertFloat(t, 50000.0, matches[0].Price, "Match price")
+	assertFloat(t, 50_000.0, matches[0].Price, "Match price")
 
 	assertTrue(t, askOrder.IsFilled(), "Ask order should be filled")
 	assertTrue(t, bidOrder.IsFilled(), "Bid order should be filled")
@@ -185,13 +185,13 @@ func TestLimit_Fill_FullMatch(t *testing.T) {
 }
 
 func TestLimit_Fill_PartialMatch_IncomingLarger(t *testing.T) {
-	limit := NewLimit(50000)
+	limit := NewLimit(50_000)
 
-	askOrder, err := NewOrder("1", Ask, 50000, 1.0)
+	askOrder, err := NewOrder("1", Ask, 50_000, 1.0)
 	assertNoError(t, err)
 	limit.AddOrder(askOrder)
 
-	bidOrder, err := NewOrder("2", Bid, 50000, 2.0)
+	bidOrder, err := NewOrder("2", Bid, 50_000, 2.0)
 	assertNoError(t, err)
 
 	matches := limit.Fill(bidOrder)
@@ -208,13 +208,13 @@ func TestLimit_Fill_PartialMatch_IncomingLarger(t *testing.T) {
 }
 
 func TestLimit_Fill_PartialMatch(t *testing.T) {
-	limit := NewLimit(50000)
+	limit := NewLimit(50_000)
 
-	askOrder, err := NewOrder("1", Ask, 50000, 2.0)
+	askOrder, err := NewOrder("1", Ask, 50_000, 2.0)
 	assertNoError(t, err)
 	limit.AddOrder(askOrder)
 
-	bidOrder, err := NewOrder("2", Bid, 50000, 1.0)
+	bidOrder, err := NewOrder("2", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 
 	matches := limit.Fill(bidOrder)
@@ -232,20 +232,20 @@ func TestLimit_Fill_PartialMatch(t *testing.T) {
 }
 
 func TestLimit_Fill_MultipleOrders_FIFO(t *testing.T) {
-	limit := NewLimit(50000)
+	limit := NewLimit(50_000)
 
-	ask1, err := NewOrder("1", Ask, 50000, 1.0)
+	ask1, err := NewOrder("1", Ask, 50_000, 1.0)
 	assertNoError(t, err)
 
 	time.Sleep(1 * time.Millisecond)
 
-	ask2, err := NewOrder("2", Ask, 50000, 1.0)
+	ask2, err := NewOrder("2", Ask, 50_000, 1.0)
 	assertNoError(t, err)
 
 	limit.AddOrder(ask1)
 	limit.AddOrder(ask2)
 
-	bidOrder, err := NewOrder("3", Bid, 50000, 1.5)
+	bidOrder, err := NewOrder("3", Bid, 50_000, 1.5)
 	assertNoError(t, err)
 
 	matches := limit.Fill(bidOrder)
@@ -266,15 +266,15 @@ func TestLimit_Fill_MultipleOrders_FIFO(t *testing.T) {
 }
 
 func TestLimit_Fill_SelfTradePrevention(t *testing.T) {
-	limit := NewLimit(50000)
+	limit := NewLimit(50_000)
 
 	// Userid 1 try place order with ask
-	askOrder, err := NewOrder("1", Ask, 50000, 1.0)
+	askOrder, err := NewOrder("1", Ask, 50_000, 1.0)
 	assertNoError(t, err)
 	limit.AddOrder(askOrder)
 
 	// UserId 1 try place order with bid (self-trade prevention)
-	bidOrder, err := NewOrder("1", Bid, 50000, 1.0)
+	bidOrder, err := NewOrder("1", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 
 	matches := limit.Fill(bidOrder)
@@ -297,7 +297,7 @@ func TestNewOrderbook(t *testing.T) {
 func TestOrderbook_PlaceLimitOrder_NoMatch(t *testing.T) {
 	ob := NewOrderbook()
 
-	bidOrder, err := NewOrder("1", Bid, 50000, 1.0)
+	bidOrder, err := NewOrder("1", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 
 	matches := ob.PlaceLimitOrder(bidOrder)
@@ -315,17 +315,17 @@ func TestOrderbook_PlaceLimitOrder_NoMatch(t *testing.T) {
 func TestOrderbook_PlaceLimitOrder_FullMatch(t *testing.T) {
 	ob := NewOrderbook()
 
-	askOrder, err := NewOrder("1", Ask, 50000, 1.0)
+	askOrder, err := NewOrder("1", Ask, 50_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(askOrder)
 
-	bidOrder, err := NewOrder("2", Bid, 50000, 1.0)
+	bidOrder, err := NewOrder("2", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 	matches := ob.PlaceLimitOrder(bidOrder)
 
 	assertEqual(t, 1, len(matches), "Should have 1 match")
 	assertFloat(t, 1.0, matches[0].SizeFilled, "Match size")
-	assertFloat(t, 50000.0, matches[0].Price, "Match price")
+	assertFloat(t, 50_000.0, matches[0].Price, "Match price")
 	assertEqual(t, "2", matches[0].Bid.UserID, "Buyer")
 	assertEqual(t, "1", matches[0].Ask.UserID, "Seller")
 
@@ -341,11 +341,11 @@ func TestOrderbook_PlaceLimitOrder_FullMatch(t *testing.T) {
 func TestOrderbook_PlaceLimitOrder_PartialMatch(t *testing.T) {
 	ob := NewOrderbook()
 
-	askOrder, err := NewOrder("1", Ask, 50000, 2.0)
+	askOrder, err := NewOrder("1", Ask, 50_000, 2.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(askOrder)
 
-	bidOrder, err := NewOrder("2", Bid, 50000, 1.0)
+	bidOrder, err := NewOrder("2", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 	matches := ob.PlaceLimitOrder(bidOrder)
 
@@ -363,11 +363,11 @@ func TestOrderbook_PlaceLimitOrder_PartialMatch(t *testing.T) {
 func TestOrderbook_PlaceLimitOrder_PriceNoMatch(t *testing.T) {
 	ob := NewOrderbook()
 
-	askOrder, err := NewOrder("1", Ask, 51000, 1.0)
+	askOrder, err := NewOrder("1", Ask, 51_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(askOrder)
 
-	bidOrder, err := NewOrder("2", Bid, 50000, 1.0)
+	bidOrder, err := NewOrder("2", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 	matches := ob.PlaceLimitOrder(bidOrder)
 
@@ -379,22 +379,22 @@ func TestOrderbook_PlaceLimitOrder_PriceNoMatch(t *testing.T) {
 func TestOrderbook_PlaceLimitOrder_MultipleMatches(t *testing.T) {
 	ob := NewOrderbook()
 
-	ask1, err := NewOrder("1", Ask, 50000, 1.0)
+	ask1, err := NewOrder("1", Ask, 50_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(ask1)
 
-	ask2, err := NewOrder("2", Ask, 50100, 1.0)
+	ask2, err := NewOrder("2", Ask, 50_100, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(ask2)
 
-	bidOrder, err := NewOrder("3", Bid, 50100, 2.0)
+	bidOrder, err := NewOrder("3", Bid, 50_100, 2.0)
 	assertNoError(t, err)
 	matches := ob.PlaceLimitOrder(bidOrder)
 
 	assertEqual(t, 2, len(matches), "Should have 2 matches")
 
 	// First Match with best price (melhor preço)
-	assertFloat(t, 50000.0, matches[0].Price, "First match price (best)")
+	assertFloat(t, 50_000.0, matches[0].Price, "First match price (best)")
 	assertFloat(t, 1.0, matches[0].SizeFilled, "First match size")
 	assertEqual(t, "1", matches[0].Ask.UserID, "First seller")
 
@@ -409,18 +409,18 @@ func TestOrderbook_PlaceLimitOrder_MultipleMatches(t *testing.T) {
 func TestOrderbook_PlaceLimitOrder_PriceTimePriority(t *testing.T) {
 	ob := NewOrderbook()
 
-	ask1, err := NewOrder("1", Ask, 50000, 1.0)
+	ask1, err := NewOrder("1", Ask, 50_000, 1.0)
 	assertNoError(t, err)
 
 	time.Sleep(1 * time.Millisecond)
 
-	ask2, err := NewOrder("2", Ask, 50000, 1.0)
+	ask2, err := NewOrder("2", Ask, 50_000, 1.0)
 	assertNoError(t, err)
 
 	ob.PlaceLimitOrder(ask1)
 	ob.PlaceLimitOrder(ask2)
 
-	bidOrder, err := NewOrder("3", Bid, 50000, 1.0)
+	bidOrder, err := NewOrder("3", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 	matches := ob.PlaceLimitOrder(bidOrder)
 
@@ -435,12 +435,12 @@ func TestOrderbook_PlaceLimitOrder_SelfTradePrevention(t *testing.T) {
 	ob := NewOrderbook()
 
 	// UserId 1 placeOrderLimit ask
-	askOrder, err := NewOrder("1", Ask, 50000, 1.0)
+	askOrder, err := NewOrder("1", Ask, 50_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(askOrder)
 
 	// UserId 1 placeOrderLimit Bid
-	bidOrder, err := NewOrder("1", Bid, 50000, 1.0)
+	bidOrder, err := NewOrder("1", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 	matches := ob.PlaceLimitOrder(bidOrder)
 
@@ -455,7 +455,7 @@ func TestOrderbook_PlaceLimitOrder_SelfTradePrevention(t *testing.T) {
 func TestOrderbook_CancelOrder(t *testing.T) {
 	ob := NewOrderbook()
 
-	order, err := NewOrder("1", Bid, 50000, 1.0)
+	order, err := NewOrder("1", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(order)
 
@@ -486,11 +486,11 @@ func TestOrderbook_CancelOrder_NotFound(t *testing.T) {
 func TestOrderbook_CancelOrder_PartiallyFilled(t *testing.T) {
 	ob := NewOrderbook()
 
-	askOrder, err := NewOrder("1", Ask, 50000, 1.0)
+	askOrder, err := NewOrder("1", Ask, 50_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(askOrder)
 
-	bidOrder, err := NewOrder("2", Bid, 50000, 2.0)
+	bidOrder, err := NewOrder("2", Bid, 50_000, 2.0)
 	assertNoError(t, err)
 	matches := ob.PlaceLimitOrder(bidOrder)
 
@@ -510,49 +510,49 @@ func TestOrderbook_CancelOrder_PartiallyFilled(t *testing.T) {
 func TestOrderbook_BestBid_BestAsk(t *testing.T) {
 	ob := NewOrderbook()
 
-	order1, err := NewOrder("1", Bid, 49000, 1.0)
+	order1, err := NewOrder("1", Bid, 49_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(order1)
 
-	order2, err := NewOrder("2", Bid, 50000, 1.0)
+	order2, err := NewOrder("2", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(order2)
 
-	order3, err := NewOrder("3", Bid, 48000, 1.0)
+	order3, err := NewOrder("3", Bid, 48_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(order3)
 
-	order4, err := NewOrder("4", Ask, 51000, 1.0)
+	order4, err := NewOrder("4", Ask, 51_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(order4)
 
-	order5, err := NewOrder("5", Ask, 52000, 1.0)
+	order5, err := NewOrder("5", Ask, 52_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(order5)
 
-	order6, err := NewOrder("6", Ask, 50500, 1.0)
+	order6, err := NewOrder("6", Ask, 50_500, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(order6)
 
 	// Best bid should be 50000
 	bestBid, hasBid := ob.BestBid()
 	assertTrue(t, hasBid, "Should have best bid")
-	assertFloat(t, 50000.0, bestBid.Price, "Best bid price")
+	assertFloat(t, 50000, bestBid.Price, "Best bid price")
 
 	// Best ask should be 50500
 	bestAsk, hasAsk := ob.BestAsk()
 	assertTrue(t, hasAsk, "Should have best ask")
-	assertFloat(t, 50500.0, bestAsk.Price, "Best ask price")
+	assertFloat(t, 50_500, bestAsk.Price, "Best ask price")
 }
 
 func TestOrderbook_Spread(t *testing.T) {
 	ob := NewOrderbook()
 
-	order, err := NewOrder("1", Bid, 49000, 1.0)
+	order, err := NewOrder("1", Bid, 49_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(order)
 
-	order2, err := NewOrder("2", Ask, 51000, 1.0)
+	order2, err := NewOrder("2", Ask, 51_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(order2)
 
@@ -570,15 +570,15 @@ func TestOrderbook_Spread_EmptyBook(t *testing.T) {
 func TestOrderbook_TotalVolumes(t *testing.T) {
 	ob := NewOrderbook()
 
-	bid1, err := NewOrder("1", Bid, 50000, 1.0)
+	bid1, err := NewOrder("1", Bid, 50_000, 1.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(bid1)
 
-	bid2, err := NewOrder("2", Bid, 49000, 2.0)
+	bid2, err := NewOrder("2", Bid, 49_000, 2.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(bid2)
 
-	ask1, err := NewOrder("3", Ask, 51000, 3.0)
+	ask1, err := NewOrder("3", Ask, 51_000, 3.0)
 	assertNoError(t, err)
 	ob.PlaceLimitOrder(ask1)
 
