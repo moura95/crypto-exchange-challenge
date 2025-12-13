@@ -103,9 +103,7 @@ func (e *Engine) PlaceOrder(userID string, pair Pair, side orderbook.Side, price
 		return nil, nil, ErrInvalidAmountTick
 	}
 
-	// 5. Convert Price to tick
-	priceTicks := utils.PriceToTicks(price, PriceTick)
-
+	// 5. Create order
 	order, err := orderbook.NewOrder(userID, side, price, amount)
 	if err != nil {
 		return nil, nil, err
@@ -133,7 +131,7 @@ func (e *Engine) PlaceOrder(userID string, pair Pair, side orderbook.Side, price
 	ob := e.getOrCreateOrderbook(pair)
 
 	// Place order in orderbook
-	matches := ob.PlaceLimitOrder(order, priceTicks)
+	matches := ob.PlaceLimitOrder(order)
 
 	// Execute transfers for each match
 	for _, match := range matches {
@@ -144,23 +142,19 @@ func (e *Engine) PlaceOrder(userID string, pair Pair, side orderbook.Side, price
 		}
 	}
 
-	// If order was partially filled, unlock the unused portion
-	if len(matches) > 0 && !order.IsFilled() {
-		if side == orderbook.Bid {
-			executedQuote := 0.0
-			for _, m := range matches {
-				executedQuote += m.SizeFilled * m.Price
-			}
+	// If order was partially filled, unlock the unused portion (BUY)
+	if side == orderbook.Bid && len(matches) > 0 && !order.IsFilled() {
+		executedQuote := 0.0
+		for _, m := range matches {
+			executedQuote += m.SizeFilled * m.Price
+		}
 
-			initialLock := price * order.Amount
+		initialLock := price * order.Amount
+		stillLocked := price * order.RemainingAmount()
+		refund := initialLock - executedQuote - stillLocked
 
-			stillLocked := price * order.RemainingAmount()
-
-			refund := initialLock - executedQuote - stillLocked
-
-			if refund > 0.000001 {
-				e.accounts.Unlock(userID, pair.Quote, refund)
-			}
+		if refund > 1e-9 {
+			_ = e.accounts.Unlock(userID, pair.Quote, refund)
 		}
 	}
 
@@ -213,10 +207,7 @@ func (e *Engine) CancelOrder(userID string, pair Pair, orderID int64) (*orderboo
 	}
 
 	if unlockAmount > 0 {
-		err = e.accounts.Unlock(userID, unlockAsset, unlockAmount)
-		if err != nil {
-			// Log error but don't fail - order is already cancelled
-		}
+		_ = e.accounts.Unlock(userID, unlockAsset, unlockAmount)
 	}
 
 	return cancelledOrder, nil
