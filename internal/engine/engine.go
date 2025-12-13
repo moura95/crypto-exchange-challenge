@@ -2,10 +2,12 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/moura95/crypto-exchange-challenge/internal/account"
 	"github.com/moura95/crypto-exchange-challenge/internal/orderbook"
+	"github.com/moura95/crypto-exchange-challenge/pkg/utils"
 )
 
 // =============================================================================
@@ -13,9 +15,20 @@ import (
 // =============================================================================
 
 var (
-	ErrInvalidPair   = errors.New("invalid pair")
-	ErrOrderNotFound = errors.New("order not found")
-	ErrUnauthorized  = errors.New("unauthorized: order belongs to another user")
+	ErrInvalidPair       = errors.New("invalid pair")
+	ErrInvalidPriceTick  = errors.New("price not aligned to tick")
+	ErrInvalidAmountTick = errors.New("amount not aligned to tick")
+	ErrOrderNotFound     = errors.New("order not found")
+	ErrUnauthorized      = errors.New("unauthorized: order belongs to another user")
+)
+
+// =============================================================================
+// CONSTANTS - Ticks do mercado BTC/BRL
+// =============================================================================
+
+const (
+	PriceTick  = 0.01
+	AmountTick = 0.00000001
 )
 
 // =============================================================================
@@ -40,7 +53,7 @@ func (p Pair) IsValid() bool {
 // =============================================================================
 
 type Engine struct {
-	orderbooks map[string]*orderbook.Orderbook // orderbooks["BTC/BRL"]
+	orderbooks map[string]*orderbook.Orderbook
 	accounts   *account.Manager
 	mu         sync.RWMutex
 }
@@ -52,7 +65,6 @@ func NewEngine() *Engine {
 	}
 }
 
-// getOrCreateOrderbook returns existing orderbook or creates new one
 func (e *Engine) getOrCreateOrderbook(pair Pair) *orderbook.Orderbook {
 	key := pair.String()
 
@@ -75,13 +87,30 @@ func (e *Engine) PlaceOrder(userID string, pair Pair, side orderbook.Side, price
 		return nil, nil, ErrInvalidPair
 	}
 
-	// Create order (validates price, amount, side)
+	// 1. Normalize Price
+	price = utils.FloorToTick(price, PriceTick)
+
+	// 2. Validate
+	if !utils.IsValidTick(price, PriceTick) {
+		return nil, nil, ErrInvalidPriceTick
+	}
+
+	// 3. Normalize amount
+	amount = utils.FloorToTick(amount, AmountTick)
+
+	// 4. Validate amount
+	if !utils.IsValidTick(amount, AmountTick) {
+		return nil, nil, ErrInvalidAmountTick
+	}
+
+	// 5. Convert Price to tick
+	priceTicks := utils.PriceToTicks(price, PriceTick)
+
 	order, err := orderbook.NewOrder(userID, side, price, amount)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Calculate how much to lock
 	var lockAsset string
 	var lockAmount float64
 
@@ -95,7 +124,6 @@ func (e *Engine) PlaceOrder(userID string, pair Pair, side orderbook.Side, price
 		lockAmount = amount
 	}
 
-	// Lock balance
 	err = e.accounts.Lock(userID, lockAsset, lockAmount)
 	if err != nil {
 		return nil, nil, err
@@ -103,27 +131,40 @@ func (e *Engine) PlaceOrder(userID string, pair Pair, side orderbook.Side, price
 
 	e.mu.Lock()
 	ob := e.getOrCreateOrderbook(pair)
-	e.mu.Unlock()
 
 	// Place order in orderbook
-	matches := ob.PlaceLimitOrder(order)
+	matches := ob.PlaceLimitOrder(order, priceTicks)
 
 	// Execute transfers for each match
 	for _, match := range matches {
-		e.executeTransfer(pair, match)
+		if err := e.executeTransfer(pair, match); err != nil {
+			e.mu.Unlock()
+			// Rollback
+			return nil, nil, fmt.Errorf("transfer failed: %w", err)
+		}
 	}
 
 	// If order was partially filled, unlock the unused portion
-	if order.RemainingAmount() > 0 && order.FilledAmount > 0 {
-		var unlockAmount float64
+	if len(matches) > 0 && !order.IsFilled() {
 		if side == orderbook.Bid {
-			// For partial buy: unlock unused quote (BRL)
-			unlockAmount = order.RemainingAmount() * price
-			// Note: remaining is still locked in the orderbook
+			executedQuote := 0.0
+			for _, m := range matches {
+				executedQuote += m.SizeFilled * m.Price
+			}
+
+			initialLock := price * order.Amount
+
+			stillLocked := price * order.RemainingAmount()
+
+			refund := initialLock - executedQuote - stillLocked
+
+			if refund > 0.000001 {
+				e.accounts.Unlock(userID, pair.Quote, refund)
+			}
 		}
-		// For sell, base asset remains locked for the remaining order
-		_ = unlockAmount // Not unlocking here, order is still active
 	}
+
+	e.mu.Unlock()
 
 	return order, matches, nil
 }
@@ -164,11 +205,9 @@ func (e *Engine) CancelOrder(userID string, pair Pair, orderID int64) (*orderboo
 	var unlockAmount float64
 
 	if cancelledOrder.Side == orderbook.Bid {
-		// Buy order: unlock remaining quote (BRL)
 		unlockAsset = pair.Quote
 		unlockAmount = cancelledOrder.RemainingAmount() * cancelledOrder.Price
 	} else {
-		// Sell order: unlock remaining base (BTC)
 		unlockAsset = pair.Base
 		unlockAmount = cancelledOrder.RemainingAmount()
 	}
@@ -177,7 +216,6 @@ func (e *Engine) CancelOrder(userID string, pair Pair, orderID int64) (*orderboo
 		err = e.accounts.Unlock(userID, unlockAsset, unlockAmount)
 		if err != nil {
 			// Log error but don't fail - order is already cancelled
-			// In production, this would need proper handling
 		}
 	}
 
@@ -185,26 +223,35 @@ func (e *Engine) CancelOrder(userID string, pair Pair, orderID int64) (*orderboo
 }
 
 // executeTransfer executes the balance transfer after a match
-func (e *Engine) executeTransfer(pair Pair, match orderbook.Match) {
+func (e *Engine) executeTransfer(pair Pair, match orderbook.Match) error {
 	buyer := match.Bid.UserID
 	seller := match.Ask.UserID
-	baseAmount := match.SizeFilled                // BTC
-	quoteAmount := match.SizeFilled * match.Price // BRL
+	baseAmount := match.SizeFilled
+	quoteAmount := match.SizeFilled * match.Price
 
 	// Seller: debit locked base (BTC), credit quote (BRL)
-	e.accounts.DebitLocked(seller, pair.Base, baseAmount)
-	e.accounts.Credit(seller, pair.Quote, quoteAmount)
+	if err := e.accounts.DebitLocked(seller, pair.Base, baseAmount); err != nil {
+		return fmt.Errorf("seller debit locked failed: %w", err)
+	}
+	if err := e.accounts.Credit(seller, pair.Quote, quoteAmount); err != nil {
+		return fmt.Errorf("seller credit failed: %w", err)
+	}
 
 	// Buyer: debit locked quote (BRL), credit base (BTC)
-	e.accounts.DebitLocked(buyer, pair.Quote, quoteAmount)
-	e.accounts.Credit(buyer, pair.Base, baseAmount)
+	if err := e.accounts.DebitLocked(buyer, pair.Quote, quoteAmount); err != nil {
+		return fmt.Errorf("buyer debit locked failed: %w", err)
+	}
+	if err := e.accounts.Credit(buyer, pair.Base, baseAmount); err != nil {
+		return fmt.Errorf("buyer credit failed: %w", err)
+	}
+
+	return nil
 }
 
 // =============================================================================
 // ORDERBOOK OPERATIONS
 // =============================================================================
 
-// GetOrderbook returns the orderbook for a pair
 func (e *Engine) GetOrderbook(pair Pair) *orderbook.Orderbook {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
