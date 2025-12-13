@@ -133,29 +133,29 @@ func TestManager_Debit_InvalidInputs(t *testing.T) {
 func TestManager_Lock(t *testing.T) {
 	m := NewManager()
 
-	m.Credit("1", "BRL", 100000.0)
+	m.Credit("1", "BRL", 100_000)
 
 	// Lock for order
-	err := m.Lock("1", "BRL", 50000.0)
+	err := m.Lock("1", "BRL", 50_000)
 	assertNoError(t, err)
 
 	balance := m.GetBalance("1", "BRL")
-	assertFloat(t, 50000.0, balance.Available, "Available after lock")
-	assertFloat(t, 50000.0, balance.Locked, "Locked after lock")
-	assertFloat(t, 100000.0, balance.Total(), "Total should not change")
+	assertFloat(t, 50_000, balance.Available, "Available after lock")
+	assertFloat(t, 50_000, balance.Locked, "Locked after lock")
+	assertFloat(t, 100_000, balance.Total(), "Total should not change")
 }
 
 func TestManager_Lock_InsufficientBalance(t *testing.T) {
 	m := NewManager()
 
-	m.Credit("1", "BRL", 50000.0)
+	m.Credit("1", "BRL", 50_000)
 
-	err := m.Lock("1", "BRL", 100000.0)
+	err := m.Lock("1", "BRL", 100_000)
 	assertError(t, ErrInsufficientBalance, err)
 
 	// Balance should not change
 	balance := m.GetBalance("1", "BRL")
-	assertFloat(t, 50000.0, balance.Available, "Available should not change")
+	assertFloat(t, 50_000, balance.Available, "Available should not change")
 	assertFloat(t, 0.0, balance.Locked, "Locked should not change")
 }
 
@@ -175,25 +175,25 @@ func TestManager_Lock_InvalidInputs(t *testing.T) {
 func TestManager_Unlock(t *testing.T) {
 	m := NewManager()
 
-	m.Credit("1", "BRL", 100000.0)
-	m.Lock("1", "BRL", 60000.0)
+	m.Credit("1", "BRL", 100_000)
+	m.Lock("1", "BRL", 60_000)
 
 	// Unlock (cancel order)
-	err := m.Unlock("1", "BRL", 30000.0)
+	err := m.Unlock("1", "BRL", 30_000)
 	assertNoError(t, err)
 
 	balance := m.GetBalance("1", "BRL")
-	assertFloat(t, 70000.0, balance.Available, "Available after unlock")
-	assertFloat(t, 30000.0, balance.Locked, "Locked after unlock")
+	assertFloat(t, 70_000, balance.Available, "Available after unlock")
+	assertFloat(t, 30_000, balance.Locked, "Locked after unlock")
 }
 
 func TestManager_Unlock_InsufficientLocked(t *testing.T) {
 	m := NewManager()
 
-	m.Credit("1", "BRL", 100000.0)
-	m.Lock("1", "BRL", 30000.0)
+	m.Credit("1", "BRL", 100_000)
+	m.Lock("1", "BRL", 30_000)
 
-	err := m.Unlock("1", "BRL", 50000.0)
+	err := m.Unlock("1", "BRL", 50_000)
 	assertError(t, ErrInsufficientLocked, err)
 }
 
@@ -213,26 +213,26 @@ func TestManager_Unlock_InvalidInputs(t *testing.T) {
 func TestManager_DebitLocked(t *testing.T) {
 	m := NewManager()
 
-	m.Credit("1", "BRL", 100000.0)
-	m.Lock("1", "BRL", 50000.0)
+	m.Credit("1", "BRL", 100_000)
+	m.Lock("1", "BRL", 50_000)
 
 	// After match, debit from locked
-	err := m.DebitLocked("1", "BRL", 50000.0)
+	err := m.DebitLocked("1", "BRL", 50_000)
 	assertNoError(t, err)
 
 	balance := m.GetBalance("1", "BRL")
-	assertFloat(t, 50000.0, balance.Available, "Available should not change")
+	assertFloat(t, 50_000, balance.Available, "Available should not change")
 	assertFloat(t, 0.0, balance.Locked, "Locked after debit")
-	assertFloat(t, 50000.0, balance.Total(), "Total after debit")
+	assertFloat(t, 50_000, balance.Total(), "Total after debit")
 }
 
 func TestManager_DebitLocked_InsufficientLocked(t *testing.T) {
 	m := NewManager()
 
-	m.Credit("1", "BRL", 100000.0)
-	m.Lock("1", "BRL", 30000.0)
+	m.Credit("1", "BRL", 100_000)
+	m.Lock("1", "BRL", 30_000)
 
-	err := m.DebitLocked("1", "BRL", 50000.0)
+	err := m.DebitLocked("1", "BRL", 50_000)
 	assertError(t, ErrInsufficientLocked, err)
 }
 
@@ -253,7 +253,7 @@ func TestManager_GetAllBalances(t *testing.T) {
 	m := NewManager()
 
 	m.Credit("1", "BTC", 10.0)
-	m.Credit("1", "BRL", 100000.0)
+	m.Credit("1", "BRL", 100_000)
 	m.Credit("1", "ETH", 50.0)
 
 	balances := m.GetAllBalances("1")
@@ -263,7 +263,7 @@ func TestManager_GetAllBalances(t *testing.T) {
 	}
 
 	assertFloat(t, 10.0, balances["BTC"].Available, "BTC balance")
-	assertFloat(t, 100000.0, balances["BRL"].Available, "BRL balance")
+	assertFloat(t, 100_000, balances["BRL"].Available, "BRL balance")
 	assertFloat(t, 50.0, balances["ETH"].Available, "ETH balance")
 }
 
@@ -272,18 +272,18 @@ func TestManager_FullOrder_Buy(t *testing.T) {
 
 	// UserID:1 wants to buy 1 BTC @ 50000 BRL
 	// 1. Credit BRL
-	m.Credit("1", "BRL", 100000.0)
+	m.Credit("1", "BRL", 100_000)
 
 	// 2. Lock BRL for order
-	err := m.Lock("1", "BRL", 50000.0)
+	err := m.Lock("1", "BRL", 50_000)
 	assertNoError(t, err)
 
 	balance := m.GetBalance("1", "BRL")
-	assertFloat(t, 50000.0, balance.Available, "Available after lock")
-	assertFloat(t, 50000.0, balance.Locked, "Locked after lock")
+	assertFloat(t, 50_000, balance.Available, "Available after lock")
+	assertFloat(t, 50_000, balance.Locked, "Locked after lock")
 
 	// 3. Match happens - debit locked BRL, credit BTC
-	err = m.DebitLocked("1", "BRL", 50000.0)
+	err = m.DebitLocked("1", "BRL", 50_000)
 	assertNoError(t, err)
 
 	err = m.Credit("1", "BTC", 1.0)
@@ -291,7 +291,7 @@ func TestManager_FullOrder_Buy(t *testing.T) {
 
 	// Verify final state
 	brlBalance := m.GetBalance("1", "BRL")
-	assertFloat(t, 50000.0, brlBalance.Available, "BRL Available after match")
+	assertFloat(t, 50_000, brlBalance.Available, "BRL Available after match")
 	assertFloat(t, 0.0, brlBalance.Locked, "BRL Locked after match")
 
 	btcBalance := m.GetBalance("1", "BTC")
@@ -317,7 +317,7 @@ func TestManager_FullOrder_Sell(t *testing.T) {
 	err = m.DebitLocked("2", "BTC", 1.0)
 	assertNoError(t, err)
 
-	err = m.Credit("2", "BRL", 50000.0)
+	err = m.Credit("2", "BRL", 50_000)
 	assertNoError(t, err)
 
 	// Verify final state
@@ -326,21 +326,21 @@ func TestManager_FullOrder_Sell(t *testing.T) {
 	assertFloat(t, 0.0, btcBalance.Locked, "BTC Locked after match")
 
 	brlBalance := m.GetBalance("2", "BRL")
-	assertFloat(t, 50000.0, brlBalance.Available, "BRL Available after match")
+	assertFloat(t, 50_000, brlBalance.Available, "BRL Available after match")
 }
 
 func TestManager_FullOrder_Cancel(t *testing.T) {
 	m := NewManager()
 
 	// OrderID:3 creates order then cancels
-	m.Credit("3", "BRL", 100000.0)
-	m.Lock("3", "BRL", 50000.0)
+	m.Credit("3", "BRL", 100_000)
+	m.Lock("3", "BRL", 50_000)
 
 	// Cancel order - unlock
-	err := m.Unlock("3", "BRL", 50000.0)
+	err := m.Unlock("3", "BRL", 50_000)
 	assertNoError(t, err)
 
 	balance := m.GetBalance("3", "BRL")
-	assertFloat(t, 100000.0, balance.Available, "Available after cancel")
+	assertFloat(t, 100_000, balance.Available, "Available after cancel")
 	assertFloat(t, 0.0, balance.Locked, "Locked after cancel")
 }
