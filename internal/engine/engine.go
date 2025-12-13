@@ -32,7 +32,7 @@ func (p Pair) String() string {
 }
 
 func (p Pair) IsValid() bool {
-	return p.Base != "" && p.Quote != ""
+	return p.Base != "" && p.Quote != "" && p.Quote == "BRL"
 }
 
 // =============================================================================
@@ -142,13 +142,13 @@ func (e *Engine) CancelOrder(userID string, pair Pair, orderID int64) (*orderboo
 		return nil, ErrOrderNotFound
 	}
 
-	// Get order to check ownership
+	// Get order to check owner
 	order, exists := ob.GetOrder(orderID)
 	if !exists {
 		return nil, ErrOrderNotFound
 	}
 
-	// Check if user owns the order
+	// Check if user is owner the order
 	if order.UserID != userID {
 		return nil, ErrUnauthorized
 	}
