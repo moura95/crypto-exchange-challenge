@@ -360,9 +360,12 @@ func (e *Engine) refundBidDifference(userID string, pair Pair, order *orderbook.
 	return nil
 }
 
+func (e *Engine) GetAccountManager() *account.Manager {
+	return e.accounts
+}
+
 func (e *Engine) GetOrderbook(pair Pair) *orderbook.Orderbook {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-
 	return e.orderbooks[pair.String()]
 }
