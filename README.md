@@ -161,6 +161,9 @@ make run
 # 5. Access the API
 # Health check: http://localhost:8080/health
 # Swagger UI:   http://localhost:8080/swagger/index.html
+
+# 6. Download Collection Postman
+# docs/CryptoExchange.postman_collection.json
 ```
 
 ### With Docker
