@@ -3,12 +3,12 @@ package v1
 import "time"
 
 type PlaceOrderRequest struct {
-	UserID string  `json:"user_id"`
-	Pair   string  `json:"pair"`  // "BTC/BRL"
-	Side   string  `json:"side"`  // "bid" ou "ask"
-	Type   string  `json:"type"`  // "limit" ou "market"
-	Price  float64 `json:"price"` // 0 para market orders
-	Amount float64 `json:"amount"`
+	UserID string  `json:"user_id" example:"1"`
+	Pair   string  `json:"pair" example:"BTC/BRL"`
+	Side   string  `json:"side" enums:"bid,ask" example:"bid"`
+	Type   string  `json:"type" enums:"limit,market" example:"limit"`
+	Price  float64 `json:"price" example:"50000.00"` // 0 para market orders
+	Amount float64 `json:"amount" example:"1"`
 }
 
 type OrderResponse struct {

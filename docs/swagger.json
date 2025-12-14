@@ -340,13 +340,16 @@
             "type": "object",
             "properties": {
                 "amount": {
-                    "type": "number"
+                    "type": "number",
+                    "example": 1
                 },
                 "asset": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "BTC"
                 },
                 "user_id": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "1"
                 }
             }
         },
@@ -465,26 +468,37 @@
             "type": "object",
             "properties": {
                 "amount": {
-                    "type": "number"
+                    "type": "number",
+                    "example": 1
                 },
                 "pair": {
-                    "description": "\"BTC/BRL\"",
-                    "type": "string"
+                    "type": "string",
+                    "example": "BTC/BRL"
                 },
                 "price": {
                     "description": "0 para market orders",
-                    "type": "number"
+                    "type": "number",
+                    "example": 50000
                 },
                 "side": {
-                    "description": "\"bid\" ou \"ask\"",
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "bid",
+                        "ask"
+                    ],
+                    "example": "bid"
                 },
                 "type": {
-                    "description": "\"limit\" ou \"market\"",
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "limit",
+                        "market"
+                    ],
+                    "example": "limit"
                 },
                 "user_id": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "1"
                 }
             }
         },

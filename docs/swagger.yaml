@@ -32,10 +32,13 @@ definitions:
   v1.CreditDebitRequest:
     properties:
       amount:
+        example: 1
         type: number
       asset:
+        example: BTC
         type: string
       user_id:
+        example: "1"
         type: string
     type: object
   v1.ErrorResponse:
@@ -113,20 +116,29 @@ definitions:
   v1.PlaceOrderRequest:
     properties:
       amount:
+        example: 1
         type: number
       pair:
-        description: '"BTC/BRL"'
+        example: BTC/BRL
         type: string
       price:
         description: 0 para market orders
+        example: 50000
         type: number
       side:
-        description: '"bid" ou "ask"'
+        enum:
+        - bid
+        - ask
+        example: bid
         type: string
       type:
-        description: '"limit" ou "market"'
+        enum:
+        - limit
+        - market
+        example: limit
         type: string
       user_id:
+        example: "1"
         type: string
     type: object
   v1.PlaceOrderResponse:

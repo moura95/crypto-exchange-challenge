@@ -1,9 +1,9 @@
 package v1
 
 type CreditDebitRequest struct {
-	UserID string  `json:"user_id"`
-	Asset  string  `json:"asset"`
-	Amount float64 `json:"amount"`
+	UserID string  `json:"user_id" example:"1"`
+	Asset  string  `json:"asset" example:"BTC"`
+	Amount float64 `json:"amount" example:"1"`
 }
 
 type BalanceItem struct {
