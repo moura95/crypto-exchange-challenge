@@ -3,7 +3,6 @@ package v1
 type LimitLevel struct {
 	Price       float64 `json:"price"`
 	TotalVolume float64 `json:"total_volume"`
-	OrderCount  int     `json:"order_count"`
 }
 
 type OrderbookResponse struct {

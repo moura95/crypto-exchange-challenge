@@ -96,7 +96,6 @@ func (h *OrderbookHandler) orderbookToResponse(pair engine.Pair, ob *orderbook.O
 		bidLevels[i] = v1.LimitLevel{
 			Price:       limit.Price(engine.PriceTick),
 			TotalVolume: limit.TotalVolume,
-			OrderCount:  len(limit.Orders),
 		}
 	}
 
@@ -105,7 +104,6 @@ func (h *OrderbookHandler) orderbookToResponse(pair engine.Pair, ob *orderbook.O
 		askLevels[i] = v1.LimitLevel{
 			Price:       limit.Price(engine.PriceTick),
 			TotalVolume: limit.TotalVolume,
-			OrderCount:  len(limit.Orders),
 		}
 	}
 
