@@ -17,10 +17,23 @@ type Engine struct {
 }
 
 func NewEngine() *Engine {
-	return &Engine{
+	e := &Engine{
 		orderbooks: make(map[string]*orderbook.Orderbook),
 		accounts:   account.NewManager(),
 	}
+
+	// Pre-List orderbooks
+	preListPairs := []Pair{
+		{Base: "BTC", Quote: "BRL"},
+		{Base: "ETH", Quote: "BRL"},
+		{Base: "USDT", Quote: "BRL"},
+	}
+
+	for _, pair := range preListPairs {
+		e.orderbooks[pair.String()] = orderbook.NewOrderbook()
+	}
+
+	return e
 }
 
 func (e *Engine) getOrCreateOrderbook(pair Pair) *orderbook.Orderbook {
