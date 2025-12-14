@@ -10,6 +10,7 @@ import (
 	"github.com/moura95/crypto-exchange-challenge/internal/engine"
 	"github.com/moura95/crypto-exchange-challenge/internal/handler"
 	"github.com/moura95/crypto-exchange-challenge/pkg/logger"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 const Version = "1.0.0"
@@ -54,6 +55,7 @@ func (s *Server) Start() error {
 func (s *Server) registerRoutes() {
 	// Health check
 	http.HandleFunc("/health", s.handleHealth)
+	http.HandleFunc("/swagger/", httpSwagger.WrapHandler)
 
 	// Account routes
 	http.HandleFunc("/api/v1/accounts/credit", s.accountHandler.Credit)
@@ -69,6 +71,7 @@ func (s *Server) registerRoutes() {
 
 	logger.Info("Routes registered:")
 	logger.Info("  GET  /health")
+	logger.Info("  GET  /swagger/index.html")
 	logger.Info("  POST /api/v1/accounts/credit")
 	logger.Info("  POST /api/v1/accounts/debit")
 	logger.Info("  GET  /api/v1/accounts/balance?user_id={id}")
