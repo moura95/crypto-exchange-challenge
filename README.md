@@ -38,7 +38,144 @@ This project was developed as a response to a technical challenge, focusing on:
 - **Concurrent Safe** - Thread-safety with mutexes (RWMutex)
 - **Trade History** - Complete trade execution history
 - **Swagger Documentation** - Interactive API docs
-- **Comprehensive Tests** - tests coverage with edge cases
+- **Comprehensive Tests** - Test coverage with edge cases
+
+---
+
+## 💡 Usage Examples
+
+### ⚠️ Important Note about User ID
+This system **does not have authentication/user control**. You can use any `user_id` in requests (example: "1", "alice", "bob", etc.). The system only manages balances and orders by user_id, but does not validate if the user exists or is authenticated.
+
+### Credit Balance
+
+Add funds to a user account:
+
+```json
+POST /api/v1/accounts/credit
+
+{
+  "user_id": "1",
+  "asset": "BTC",
+  "amount": 5
+}
+```
+
+```json
+POST /api/v1/accounts/credit
+
+{
+  "user_id": "1",
+  "asset": "BRL",
+  "amount": 500000
+}
+```
+
+### Place Limit Order
+
+Create an order with a specific price:
+
+```json
+POST /api/v1/orders
+
+{
+  "user_id": "1",
+  "pair": "BTC/BRL",
+  "side": "ask",
+  "type": "limit",
+  "price": 51000,
+  "amount": 1
+}
+```
+
+**Valid options:**
+- `side`: `"bid"` (buy) or `"ask"` (sell)
+- `type`: `"limit"` (specific price) or `"market"` (immediate execution at best price)
+
+### Place Market Order
+
+Execute immediately at the best available price:
+
+```json
+POST /api/v1/orders
+
+{
+  "user_id": "2",
+  "pair": "BTC/BRL",
+  "side": "bid",
+  "type": "market",
+  "amount": 0.5
+}
+```
+
+### Cancel Order
+
+Cancel an existing order:
+
+```json
+POST /api/v1/orders/cancel
+
+{
+  "user_id": "1",
+  "order_id": "1"
+}
+```
+
+### Check Balance
+
+Query all balances for a user:
+
+```http
+GET /api/v1/accounts/balance?user_id=1
+```
+
+Response:
+```json
+{
+  "user_id": "1",
+  "balances": {
+    "BTC": {
+      "available": 4.0,
+      "locked": 1.0,
+      "total": 5.0
+    },
+    "BRL": {
+      "available": 449000,
+      "locked": 51000,
+      "total": 500000
+    }
+  }
+}
+```
+
+### View Orderbook
+
+See current state of the orderbook:
+
+```http
+GET /api/v1/orderbook?pair=BTC/BRL
+```
+
+Response:
+```json
+{
+  "pair": "BTC/BRL",
+  "bids": [
+    {
+      "price": 50000,
+      "amount": 2.5,
+      "total": 125000
+    }
+  ],
+  "asks": [
+    {
+      "price": 51000,
+      "amount": 1.0,
+      "total": 51000
+    }
+  ]
+}
+```
 
 ---
 
@@ -162,14 +299,14 @@ make run
 # Health check: http://localhost:8080/health
 # Swagger UI:   http://localhost:8080/swagger/index.html
 
-# 6. Download Collection Postman
+# 6. Download Postman Collection
 # docs/CryptoExchange.postman_collection.json
 ```
 
 ### With Docker
 
 ```bash
-# Build and Run with docker-compose
+# Build and run with docker-compose
 make docker-run
 
 # Stop containers
@@ -227,14 +364,13 @@ make test
 
 1. **Unit Tests** - Test isolated components
 2. **Integration Tests** - Test complete flows
-3**Edge Case Tests** - Test extreme scenarios:
-    - Insufficient balance
-    - Self-trade prevention
-    - Partial fills
-    - Price improvement
-    - Double cancellation
-    - Market order with insufficient liquidity
-
+3. **Edge Case Tests** - Test extreme scenarios:
+   - Insufficient balance
+   - Self-trade prevention
+   - Partial fills
+   - Price improvement
+   - Double cancellation
+   - Market order with insufficient liquidity
 
 ---
 
@@ -503,9 +639,9 @@ crypto-exchange-challenge/
 │   └── utils/                     # Utilities
 │       └── tick.go                # Tick normalization
 │
-├── docs/                          # Swagger docs (auto-generated) / Collection Postman
+├── docs/                          # Swagger docs (auto-generated) / Postman Collection
 │   ├── CryptoExchange.postman_collection.json
-    ├── docs.go
+│   ├── docs.go
 │   ├── swagger.json
 │   └── swagger.yaml
 │
@@ -589,14 +725,27 @@ const (
 )
 ```
 
-### Order Types
+### Order Types & Sides
 
 ```go
+// Order Types
 const (
-    OrderTypeLimit  = "limit"   // Specific price
-    OrderTypeMarket = "market"  // Execute immediately at best price
+    OrderTypeLimit  = "limit"   // Order with specific price
+    OrderTypeMarket = "market"  // Immediate execution at best available price
+)
+
+// Order Sides
+const (
+    SideBid = "bid"  // BUY order
+    SideAsk = "ask"  // SELL order
 )
 ```
+
+**Examples:**
+- `"side": "bid"` + `"type": "limit"` → Buy BTC at a specific maximum price
+- `"side": "ask"` + `"type": "limit"` → Sell BTC at a specific minimum price
+- `"side": "bid"` + `"type": "market"` → Buy BTC immediately at best available price
+- `"side": "ask"` + `"type": "market"` → Sell BTC immediately at best available price
 
 ### Balance Structure
 
@@ -634,12 +783,17 @@ If I had more time, I would implement:
 ### 4. Operations
 - [ ] Detailed health checks (DB, memory, goroutines)
 - [ ] Graceful shutdown
+- [ ] Metrics and monitoring
 
-### 5. Security
-- [ ] JWT authentication
-- [ ] Rate limiting + DDoS protection
+### 5. Security & Authentication
+- [ ] **User authentication/authorization system**
+   - JWT/OAuth2 implementation
+   - User registration and login
+   - Validate user_id against authenticated sessions
+- [ ] Rate limiting per user
 - [ ] Input sanitization
 - [ ] HTTPS/TLS
+- [ ] API key management
 
 ---
 ## 👨‍💻 Author
