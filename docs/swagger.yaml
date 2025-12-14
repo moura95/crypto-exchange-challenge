@@ -1,0 +1,335 @@
+basePath: /
+definitions:
+  v1.BalanceItem:
+    properties:
+      asset:
+        type: string
+      available:
+        type: number
+      locked:
+        type: number
+      total:
+        type: number
+    type: object
+  v1.BalanceResponse:
+    properties:
+      balances:
+        items:
+          $ref: '#/definitions/v1.BalanceItem'
+        type: array
+      user_id:
+        type: string
+    type: object
+  v1.CancelOrderRequest:
+    properties:
+      order_id:
+        type: integer
+      pair:
+        type: string
+      user_id:
+        type: string
+    type: object
+  v1.CreditDebitRequest:
+    properties:
+      amount:
+        type: number
+      asset:
+        type: string
+      user_id:
+        type: string
+    type: object
+  v1.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  v1.HealthResponse:
+    properties:
+      status:
+        type: string
+      timestamp:
+        type: string
+    type: object
+  v1.LimitLevel:
+    properties:
+      price:
+        type: number
+      total_volume:
+        type: number
+    type: object
+  v1.MatchResponse:
+    properties:
+      ask_order_id:
+        type: integer
+      bid_order_id:
+        type: integer
+      price:
+        type: number
+      size_filled:
+        type: number
+      timestamp:
+        type: string
+    type: object
+  v1.OrderResponse:
+    properties:
+      amount:
+        type: number
+      filled_amount:
+        type: number
+      id:
+        type: integer
+      pair:
+        type: string
+      price:
+        type: number
+      side:
+        type: string
+      state:
+        type: string
+      timestamp:
+        type: string
+      type:
+        type: string
+      user_id:
+        type: string
+    type: object
+  v1.OrderbookResponse:
+    properties:
+      ask_total_volume:
+        type: number
+      asks:
+        items:
+          $ref: '#/definitions/v1.LimitLevel'
+        type: array
+      bid_total_volume:
+        type: number
+      bids:
+        items:
+          $ref: '#/definitions/v1.LimitLevel'
+        type: array
+      pair:
+        type: string
+      spread:
+        type: number
+    type: object
+  v1.PlaceOrderRequest:
+    properties:
+      amount:
+        type: number
+      pair:
+        description: '"BTC/BRL"'
+        type: string
+      price:
+        description: 0 para market orders
+        type: number
+      side:
+        description: '"bid" ou "ask"'
+        type: string
+      type:
+        description: '"limit" ou "market"'
+        type: string
+      user_id:
+        type: string
+    type: object
+  v1.PlaceOrderResponse:
+    properties:
+      matches:
+        items:
+          $ref: '#/definitions/v1.MatchResponse'
+        type: array
+      order:
+        $ref: '#/definitions/v1.OrderResponse'
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@example.com
+    name: API Support
+  description: Central Limit Order Book (CLOB) with matching engine for trading crypto
+    assets
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: http://swagger.io/terms/
+  title: Crypto Exchange API
+  version: 1.0.0
+paths:
+  /api/v1/accounts/balance:
+    get:
+      description: Get all balances for a user's account
+      parameters:
+      - description: User ID
+        in: query
+        name: user_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Balance retrieved successfully
+          schema:
+            $ref: '#/definitions/v1.BalanceResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Get account balance
+      tags:
+      - Accounts
+  /api/v1/accounts/credit:
+    post:
+      consumes:
+      - application/json
+      description: Add balance to a user's account
+      parameters:
+      - description: Credit details (includes user_id)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.CreditDebitRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Credit successful
+          schema:
+            $ref: '#/definitions/v1.BalanceResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Credit asset to account
+      tags:
+      - Accounts
+  /api/v1/accounts/debit:
+    post:
+      consumes:
+      - application/json
+      description: Remove balance from a user's account
+      parameters:
+      - description: Debit details (includes user_id)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.CreditDebitRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Debit successful
+          schema:
+            $ref: '#/definitions/v1.BalanceResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Debit asset from account
+      tags:
+      - Accounts
+  /api/v1/orderbook:
+    get:
+      description: Get the current orderbook for a trading pair
+      parameters:
+      - description: Trading pair (e.g., BTC/BRL)
+        in: query
+        name: pair
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Orderbook retrieved successfully
+          schema:
+            $ref: '#/definitions/v1.OrderbookResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Orderbook not found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Get orderbook
+      tags:
+      - Orderbook
+  /api/v1/orders:
+    post:
+      consumes:
+      - application/json
+      description: Create a limit or market order
+      parameters:
+      - description: Order details
+        in: body
+        name: order
+        required: true
+        schema:
+          $ref: '#/definitions/v1.PlaceOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Order placed successfully
+          schema:
+            $ref: '#/definitions/v1.PlaceOrderResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Place a new order
+      tags:
+      - Orders
+  /api/v1/orders/cancel:
+    post:
+      consumes:
+      - application/json
+      description: Cancel an existing order by ID
+      parameters:
+      - description: Cancel order details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.CancelOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Order cancelled successfully
+          schema:
+            $ref: '#/definitions/v1.OrderResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Order not found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      summary: Cancel an order
+      tags:
+      - Orders
+  /health:
+    get:
+      description: Returns the health status of the API
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is healthy
+          schema:
+            $ref: '#/definitions/v1.HealthResponse'
+      summary: Health check
+      tags:
+      - Health
+schemes:
+- http
+- https
+swagger: "2.0"
