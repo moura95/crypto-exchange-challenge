@@ -255,28 +255,6 @@ func TestOrderbook_BestBid_BestAsk(t *testing.T) {
 	assertFloat(t, 50_500, bestAsk.Price(priceTick), "Best ask price")
 }
 
-func TestOrderbook_Spread(t *testing.T) {
-	ob := NewOrderbook()
-
-	order, err := NewOrder("1", Bid, 49_000, 1.0)
-	assertNoError(t, err)
-	ob.PlaceLimitOrder(order)
-
-	order2, err := NewOrder("2", Ask, 51_000, 1.0)
-	assertNoError(t, err)
-	ob.PlaceLimitOrder(order2)
-
-	spread := ob.Spread()
-	assertFloat(t, 2000.0, spread, "Spread should be 51000 - 49000")
-}
-
-func TestOrderbook_Spread_EmptyBook(t *testing.T) {
-	ob := NewOrderbook()
-
-	spread := ob.Spread()
-	assertFloat(t, 0.0, spread, "Spread should be 0 for empty book")
-}
-
 func TestOrderbook_TotalVolumes(t *testing.T) {
 	ob := NewOrderbook()
 

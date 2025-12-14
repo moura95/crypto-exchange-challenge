@@ -111,7 +111,6 @@ func (h *OrderbookHandler) orderbookToResponse(pair engine.Pair, ob *orderbook.O
 		Pair:           pair.String(),
 		Bids:           bidLevels,
 		Asks:           askLevels,
-		Spread:         ob.Spread(),
 		BidTotalVolume: ob.BidTotalVolume(),
 		AskTotalVolume: ob.AskTotalVolume(),
 	}

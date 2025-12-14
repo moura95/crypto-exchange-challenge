@@ -460,9 +460,6 @@ const docTemplate = `{
                 },
                 "pair": {
                     "type": "string"
-                },
-                "spread": {
-                    "type": "number"
                 }
             }
         },

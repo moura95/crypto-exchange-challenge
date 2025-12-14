@@ -183,18 +183,6 @@ func (ob *Orderbook) BestAsk() (*Limit, bool) {
 	return ob.asks[0], true
 }
 
-func (ob *Orderbook) Spread() float64 {
-	ob.mu.RLock()
-	defer ob.mu.RUnlock()
-
-	if len(ob.bids) == 0 || len(ob.asks) == 0 {
-		return 0
-	}
-
-	spreadTicks := ob.asks[0].PriceTicks - ob.bids[0].PriceTicks
-	return utils.TicksToPrice(spreadTicks, ob.priceTick)
-}
-
 func (ob *Orderbook) BidTotalVolume() float64 {
 	ob.mu.RLock()
 	defer ob.mu.RUnlock()

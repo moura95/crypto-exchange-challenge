@@ -458,9 +458,6 @@
                 },
                 "pair": {
                     "type": "string"
-                },
-                "spread": {
-                    "type": "number"
                 }
             }
         },

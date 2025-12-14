@@ -109,8 +109,6 @@ definitions:
         type: array
       pair:
         type: string
-      spread:
-        type: number
     type: object
   v1.PlaceOrderRequest:
     properties:
