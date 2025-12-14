@@ -277,3 +277,146 @@ func (e *Engine) refundBidDifference(userID string, pair Pair, order *orderbook.
 
 	return nil
 }
+func (e *Engine) estimateMarketOrderCost(ob *orderbook.Orderbook, side orderbook.Side, amount float64) float64 {
+	if ob == nil {
+		return 0
+	}
+
+	if side == orderbook.Ask {
+		// SELL market: validate liquidity enough
+		remaining := amount
+
+		for _, bidLimit := range ob.Bids() {
+			if remaining <= 0.00000001 {
+				break
+			}
+
+			fillQty := min(remaining, bidLimit.TotalVolume)
+			remaining -= fillQty
+		}
+
+		// if remaining > 0, means there is not enough liquidity
+		if remaining > 0.00000001 {
+			return 0
+		}
+
+		return amount
+	}
+
+	// BUY market: estimate Buy market order
+	cost := 0.0
+	remaining := amount
+
+	for _, askLimit := range ob.Asks() {
+		if remaining <= 0.00000001 {
+			break
+		}
+
+		askPrice := askLimit.Price(PriceTick)
+		fillQty := min(remaining, askLimit.TotalVolume)
+
+		cost += fillQty * askPrice
+		remaining -= fillQty
+	}
+
+	// if have no enough liquidity, reject
+	if remaining > 0.00000001 {
+		return 0
+	}
+
+	return utils.RoundToTick(cost, PriceTick)
+}
+
+// PlaceMarketOrder execute market order immediately
+// Market orders do not enter the book
+func (e *Engine) PlaceMarketOrder(userID string, pair Pair, side orderbook.Side, amount float64) (*orderbook.Order, []orderbook.Match, error) {
+	if !pair.IsValid() {
+		return nil, nil, ErrInvalidPair
+	}
+
+	// Normalize amount
+	amount = utils.FloorToTick(amount, AmountTick)
+	if !utils.IsValidTick(amount, AmountTick) {
+		return nil, nil, ErrInvalidAmountTick
+	}
+
+	// 2. Create market order
+	order, err := orderbook.NewMarketOrder(userID, side, amount)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// 3. Estimate cost
+	e.mu.RLock()
+	ob := e.getOrCreateOrderbook(pair)
+	estimatedCost := e.estimateMarketOrderCost(ob, side, amount)
+	e.mu.RUnlock()
+
+	if estimatedCost == 0 {
+		return nil, nil, errors.New("insufficient liquidity for market order")
+	}
+
+	// 4. Decide which asset and how much to lock
+	var lockAsset string
+	var lockAmount float64
+
+	if side == orderbook.Bid {
+		// BUY market
+		lockAsset = pair.Quote
+		lockAmount = estimatedCost
+	} else {
+		// SELL market
+		lockAsset = pair.Base
+		lockAmount = estimatedCost
+	}
+
+	// 5. Lock funds
+	if err := e.accounts.Lock(userID, lockAsset, lockAmount); err != nil {
+		return nil, nil, err
+	}
+
+	// 6. Execute order in orderbook
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	ob = e.getOrCreateOrderbook(pair)
+	matches := ob.PlaceMarketOrder(order)
+
+	// 7. Execute transfer
+	for _, match := range matches {
+		if err := e.executeTransfer(pair, match); err != nil {
+			// Unlock for do not leave user lock
+			_ = e.accounts.Unlock(userID, lockAsset, lockAmount)
+			return nil, nil, fmt.Errorf("transfer failed: %w", err)
+		}
+	}
+
+	// 8. Refund/unlock unused amount
+	if side == orderbook.Bid {
+		// BUY market: unlock quote that was not spent
+		executedQuote := 0.0
+		for _, m := range matches {
+			executedQuote += m.SizeFilled * m.Price
+		}
+		refund := lockAmount - executedQuote
+
+		const minRefundBRL = 0.01
+		if refund >= minRefundBRL {
+			if err := e.accounts.Unlock(userID, pair.Quote, refund); err != nil {
+				return nil, nil, fmt.Errorf("refund unlock failed: %w", err)
+			}
+		}
+	} else {
+		// SELL market: unlock base that was not sold
+		unfilledAmount := order.RemainingAmount()
+
+		const minRefundBTC = 0.00000001
+		if unfilledAmount >= minRefundBTC {
+			if err := e.accounts.Unlock(userID, pair.Base, unfilledAmount); err != nil {
+				return nil, nil, fmt.Errorf("unlock unfilled failed: %w", err)
+			}
+		}
+	}
+
+	return order, matches, nil
+}
