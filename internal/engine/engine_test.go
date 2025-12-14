@@ -496,3 +496,202 @@ func TestEngine_CancelOrder_AfterBuyPartialFill_SamePrice_ShouldUnlockRemaining(
 	buyerBTC := e.accounts.GetBalance("1", "BTC")
 	assertFloat(t, 10.5, buyerBTC.Available, "Buyer BTC after partial fill and cancel")
 }
+
+// =============================================================================
+// MARKET ORDER TESTS
+// =============================================================================
+
+func TestEngine_PlaceMarketOrder_Buy_FullFill(t *testing.T) {
+	e := setupEngine()
+
+	// Setup: User 2 places two ASK orders
+	_, _, err := e.PlaceOrder("2", btcBrl(), orderbook.Ask, 50_000, 0.5)
+	assertNoError(t, err)
+
+	_, _, err = e.PlaceOrder("2", btcBrl(), orderbook.Ask, 50_100, 0.5)
+	assertNoError(t, err)
+
+	// User 1 places MARKET BUY for 1 BTC (should consume both asks)
+	order, matches, err := e.PlaceMarketOrder("1", btcBrl(), orderbook.Bid, 1.0)
+	assertNoError(t, err)
+
+	// Should have 2 matches
+	assertEqual(t, 2, len(matches), "Should have 2 matches")
+	assertEqual(t, orderbook.OrderFilled, order.State, "Order should be filled")
+	assertFloat(t, 1.0, order.FilledAmount, "Filled amount")
+
+	// First match @ 50,000 (best price)
+	assertFloat(t, 50_000, matches[0].Price, "First match price")
+	assertFloat(t, 0.5, matches[0].SizeFilled, "First match size")
+
+	// Second match @ 50,100
+	assertFloat(t, 50_100, matches[1].Price, "Second match price")
+	assertFloat(t, 0.5, matches[1].SizeFilled, "Second match size")
+
+	// Buyer balances: spent (0.5*50k + 0.5*50.1k) = 50,050
+	buyerBRL := e.accounts.GetBalance("1", "BRL")
+	buyerBTC := e.accounts.GetBalance("1", "BTC")
+	assertFloat(t, 49_950, buyerBRL.Available, "Buyer BRL after trade") // 100k - 50,050
+	assertFloat(t, 0, buyerBRL.Locked, "Buyer BRL locked should be 0")
+	assertFloat(t, 11, buyerBTC.Available, "Buyer BTC after trade") // 10 + 1
+
+	// Seller balances
+	sellerBRL := e.accounts.GetBalance("2", "BRL")
+	sellerBTC := e.accounts.GetBalance("2", "BTC")
+	assertFloat(t, 150_050, sellerBRL.Available, "Seller BRL after trade") // 100k + 50,050
+	assertFloat(t, 9, sellerBTC.Available, "Seller BTC after trade")       // 10 - 1
+}
+
+func TestEngine_PlaceMarketOrder_Sell_FullFill(t *testing.T) {
+	e := setupEngine()
+
+	// Setup: User 1 places two BID orders
+	_, _, err := e.PlaceOrder("1", btcBrl(), orderbook.Bid, 50_200, 0.6)
+	assertNoError(t, err)
+
+	_, _, err = e.PlaceOrder("1", btcBrl(), orderbook.Bid, 50_100, 0.4)
+	assertNoError(t, err)
+
+	// User 2 places MARKET SELL for 1 BTC (should consume both bids)
+	order, matches, err := e.PlaceMarketOrder("2", btcBrl(), orderbook.Ask, 1.0)
+	assertNoError(t, err)
+
+	// Should have 2 matches
+	assertEqual(t, 2, len(matches), "Should have 2 matches")
+	assertEqual(t, orderbook.OrderFilled, order.State, "Order should be filled")
+	assertFloat(t, 1.0, order.FilledAmount, "Filled amount")
+
+	// First match @ 50,200 (best bid)
+	assertFloat(t, 50_200, matches[0].Price, "First match price")
+	assertFloat(t, 0.6, matches[0].SizeFilled, "First match size")
+
+	// Second match @ 50,100
+	assertFloat(t, 50_100, matches[1].Price, "Second match price")
+	assertFloat(t, 0.4, matches[1].SizeFilled, "Second match size")
+
+	// Seller balances: received (0.6*50,200 + 0.4*50,100) = 50,160
+	sellerBRL := e.accounts.GetBalance("2", "BRL")
+	sellerBTC := e.accounts.GetBalance("2", "BTC")
+	assertFloat(t, 150_160, sellerBRL.Available, "Seller BRL after trade") // 100k + 50,160
+	assertFloat(t, 0, sellerBRL.Locked, "Seller BRL locked should be 0")
+	assertFloat(t, 9, sellerBTC.Available, "Seller BTC after trade") // 10 - 1
+
+	// Buyer balances
+	buyerBRL := e.accounts.GetBalance("1", "BRL")
+	buyerBTC := e.accounts.GetBalance("1", "BTC")
+	assertFloat(t, 49_840, buyerBRL.Available, "Buyer BRL after trade") // 100k - 50,160
+	assertFloat(t, 11, buyerBTC.Available, "Buyer BTC after trade")     // 10 + 1
+}
+
+func TestEngine_PlaceMarketOrder_Buy_PartialFill_InsufficientLiquidity(t *testing.T) {
+	e := setupEngine()
+
+	// Setup: Only 0.5 BTC available on asks
+	_, _, err := e.PlaceOrder("2", btcBrl(), orderbook.Ask, 50_000, 0.5)
+	assertNoError(t, err)
+
+	// User 1 tries to buy 2 BTC (market) - not enough liquidity
+	_, _, err = e.PlaceMarketOrder("1", btcBrl(), orderbook.Bid, 2.0)
+	assertError(t, err)
+
+	// Error should be about insufficient liquidity
+	assertEqual(t, "insufficient liquidity for market order", err.Error(), "Error message")
+
+	// Balance should not change (order rejected before locking)
+	buyerBRL := e.accounts.GetBalance("1", "BRL")
+	assertFloat(t, 100_000, buyerBRL.Available, "Buyer BRL should not change")
+	assertFloat(t, 0, buyerBRL.Locked, "Buyer BRL locked should be 0")
+}
+
+func TestEngine_PlaceMarketOrder_Sell_InsufficientLiquidity(t *testing.T) {
+	e := setupEngine()
+
+	// Setup: Only 0.5 BTC worth of bids available
+	_, _, err := e.PlaceOrder("1", btcBrl(), orderbook.Bid, 50_000, 0.5)
+	assertNoError(t, err)
+
+	// User 2 tries to sell 2 BTC (market) - not enough liquidity
+	_, _, err = e.PlaceMarketOrder("2", btcBrl(), orderbook.Ask, 2.0)
+	assertError(t, err)
+
+	assertEqual(t, "insufficient liquidity for market order", err.Error(), "Error message")
+
+	// Balance should not change
+	sellerBTC := e.accounts.GetBalance("2", "BTC")
+	assertFloat(t, 10, sellerBTC.Available, "Seller BTC should not change")
+	assertFloat(t, 0, sellerBTC.Locked, "Seller BTC locked should be 0")
+}
+
+func TestEngine_PlaceMarketOrder_Buy_InsufficientBalance(t *testing.T) {
+	e := NewEngine()
+
+	// User with only 1,000 BRL
+	_ = e.accounts.Credit("1", "BRL", 1_000)
+
+	// Setup: ASK @ 50,000 for 1 BTC
+	_ = e.accounts.Credit("2", "BTC", 10)
+	_, _, _ = e.PlaceOrder("2", btcBrl(), orderbook.Ask, 50_000, 1.0)
+
+	// User 1 tries to market buy 1 BTC (needs ~50,250 but has only 1,000)
+	_, _, err := e.PlaceMarketOrder("1", btcBrl(), orderbook.Bid, 1.0)
+	assertError(t, err)
+
+	// Should fail on Lock (insufficient balance)
+	buyerBRL := e.accounts.GetBalance("1", "BRL")
+	assertFloat(t, 1_000, buyerBRL.Available, "Balance should not change")
+}
+
+func TestEngine_PlaceMarketOrder_Sell_InsufficientBalance(t *testing.T) {
+	e := NewEngine()
+
+	// User with only 0.1 BTC
+	_ = e.accounts.Credit("2", "BTC", 0.1)
+
+	// Setup: BID @ 50,000 for 1 BTC
+	_ = e.accounts.Credit("1", "BRL", 100_000)
+	_, _, _ = e.PlaceOrder("1", btcBrl(), orderbook.Bid, 50_000, 1.0)
+
+	// User 2 tries to market sell 1 BTC (has only 0.1)
+	_, _, err := e.PlaceMarketOrder("2", btcBrl(), orderbook.Ask, 1.0)
+	assertError(t, err)
+
+	sellerBTC := e.accounts.GetBalance("2", "BTC")
+	assertFloat(t, 0.1, sellerBTC.Available, "Balance should not change")
+}
+
+func TestEngine_PlaceMarketOrder_Buy_EmptyBook(t *testing.T) {
+	e := setupEngine()
+
+	// No asks in the book
+	_, _, err := e.PlaceMarketOrder("1", btcBrl(), orderbook.Bid, 1.0)
+	assertError(t, err)
+
+	assertEqual(t, "insufficient liquidity for market order", err.Error(), "Error message")
+}
+
+func TestEngine_PlaceMarketOrder_Sell_EmptyBook(t *testing.T) {
+	e := setupEngine()
+
+	// No bids in the book
+	_, _, err := e.PlaceMarketOrder("2", btcBrl(), orderbook.Ask, 1.0)
+	assertError(t, err)
+
+	assertEqual(t, "insufficient liquidity for market order", err.Error(), "Error message")
+}
+
+func TestEngine_PlaceMarketOrder_InvalidPair(t *testing.T) {
+	e := setupEngine()
+
+	_, _, err := e.PlaceMarketOrder("1", Pair{}, orderbook.Bid, 1.0)
+	assertEqual(t, ErrInvalidPair, err, "Should return invalid pair error")
+}
+
+func TestEngine_PlaceMarketOrder_InvalidAmount(t *testing.T) {
+	e := setupEngine()
+
+	_, _, err := e.PlaceMarketOrder("1", btcBrl(), orderbook.Bid, 0)
+	assertError(t, err)
+
+	_, _, err = e.PlaceMarketOrder("1", btcBrl(), orderbook.Bid, -1)
+	assertError(t, err)
+}
